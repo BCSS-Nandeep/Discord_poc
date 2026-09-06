@@ -18,6 +18,7 @@ from tests.fake_discord import (
     MISSING_CHANNEL_ID,
     PRIVATE_CHANNEL_ID,
     PUBLIC_CHANNEL_ID,
+    FakeChannel,
     FakeDiscord,
     make_message,
 )
@@ -274,3 +275,54 @@ async def test_gateway_ignores_messages_for_unmonitored_channels(
     async with database.session() as session:
         graph = clients.build_services(session)
         assert await graph.messages.count() == 0
+
+
+# ------------------------------------------- uncollectable channels (real-world bug) --
+async def test_monitor_on_a_voice_channel_is_rejected_not_left_pending(
+    services, fake_discord: FakeDiscord
+):
+    """A voice channel can never become collectable, so it must not create a
+    PENDING request telling the caller to wait for an administrator."""
+
+    from app.core.exceptions import ValidationError
+
+    fake_discord.channels["200000000000000061"] = FakeChannel(
+        channel_id="200000000000000061", name="Voice Chat", channel_type=2
+    )
+
+    with pytest.raises(ValidationError) as excinfo:
+        await services.workflow.start_monitor("200000000000000061")
+
+    assert excinfo.value.details["reason"] == "NOT_A_TEXT_CHANNEL"
+    assert await services.monitors.get_by_channel("200000000000000061") is None
+    _rows, total = await services.access_requests.list_requests(
+        channel_id="200000000000000061"
+    )
+    assert total == 0, "no access request should be created for a voice channel"
+
+
+async def test_access_request_for_a_category_is_rejected(
+    services, fake_discord: FakeDiscord
+):
+    from app.core.exceptions import ValidationError
+
+    fake_discord.channels["200000000000000062"] = FakeChannel(
+        channel_id="200000000000000062", name="Text Channels", channel_type=4
+    )
+
+    with pytest.raises(ValidationError):
+        await services.workflow.request_access("200000000000000062")
+
+    _rows, total = await services.access_requests.list_requests(
+        channel_id="200000000000000062"
+    )
+    assert total == 0
+
+
+async def test_private_text_channel_still_creates_a_pending_request(services):
+    """The guard must not break the legitimate private-channel path."""
+
+    monitor, outcome, _scrape = await services.workflow.start_monitor(PRIVATE_CHANNEL_ID)
+
+    assert monitor.status == MonitorStatus.WAITING_FOR_ACCESS.value
+    assert outcome.request.status == "PENDING"

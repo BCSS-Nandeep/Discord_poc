@@ -413,6 +413,39 @@ class AccessWorkflowService:
         self._monitors = monitor_service
         self._notifications = notification_service
 
+    @staticmethod
+    def _reject_if_never_collectable(
+        evaluation: AccessEvaluation, channel_id: str
+    ) -> None:
+        """Refuse channels no administrator action could ever make collectable.
+
+        Without this, a voice channel or category would get a PENDING access request
+        telling the caller to wait for an admin -- advice that can never come true. The
+        12-hour worker would eventually DENY it, but only after misleading the caller
+        for hours.
+        """
+
+        if evaluation.reason is AccessReason.CHANNEL_NOT_FOUND:
+            raise NotFoundError(
+                "Channel does not exist or is not visible to this bot",
+                details={"channel_id": channel_id},
+            )
+        if evaluation.reason is AccessReason.NOT_A_TEXT_CHANNEL:
+            from app.core.exceptions import ValidationError
+
+            raise ValidationError(
+                "This channel type cannot hold collectable messages",
+                details={
+                    "channel_id": channel_id,
+                    "channel_type": evaluation.channel_type,
+                    "reason": evaluation.reason.value,
+                    "hint": (
+                        "Only text, announcement, thread, forum and media channels can "
+                        "be collected. Voice channels and categories cannot."
+                    ),
+                },
+            )
+
     @classmethod
     def _lock_for(cls, channel_id: str) -> asyncio.Lock:
         lock = cls._channel_locks.get(channel_id)
@@ -443,12 +476,7 @@ class AccessWorkflowService:
 
         async with self._lock_for(cid):
             channel, evaluation = await self._channels.refresh_access(cid)
-
-            if evaluation.reason is AccessReason.CHANNEL_NOT_FOUND:
-                raise NotFoundError(
-                    "Channel does not exist or is not visible to this bot",
-                    details={"channel_id": cid},
-                )
+            self._reject_if_never_collectable(evaluation, cid)
 
             # Already accessible: do not create an unnecessary pending request.
             if evaluation.collection_allowed:
@@ -733,12 +761,7 @@ class AccessWorkflowService:
 
         async with self._lock_for(cid):
             channel, evaluation = await self._channels.refresh_access(cid)
-
-            if evaluation.reason is AccessReason.CHANNEL_NOT_FOUND:
-                raise NotFoundError(
-                    "Channel does not exist or is not visible to this bot",
-                    details={"channel_id": cid},
-                )
+            self._reject_if_never_collectable(evaluation, cid)
             if evaluation.transient:
                 raise _transient_error(evaluation)
 
