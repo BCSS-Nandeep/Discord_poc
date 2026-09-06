@@ -1,0 +1,16 @@
+.env
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.lock
+.discord_service.worker.lock
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/

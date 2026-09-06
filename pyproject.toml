@@ -1,0 +1,42 @@
+[project]
+name = "discord-collection-service"
+version = "1.0.0"
+description = "Standalone FastAPI service collecting Discord data via the official Bot API."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning:discord.*",
+    "ignore:Using `httpx` with `starlette.testclient`:DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM"]
+ignore = [
+    # `Depends(...)` and Pydantic model defaults in argument defaults are the
+    # documented FastAPI idiom, not the Python mutable-default trap B008 targets.
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The lock file handle is deliberately kept open for the lifetime of the process:
+# closing it would release the advisory lock that guards the background workers.
+"app/core/runlock.py" = ["SIM115"]
+# Tests reach into private members to assert on internal state.
+"tests/*" = ["SLF001"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+disallow_untyped_defs = false
+check_untyped_defs = true
+exclude = "tests/"

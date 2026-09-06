@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Discord Collection Service — Console</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --border: #e2e5ea; --text: #1c2024;
+    --muted: #646b76; --accent: #5865f2; --accent-soft: #eef0fe;
+    --ok: #1a7f52; --ok-soft: #e6f4ec; --warn: #9a6700; --warn-soft: #fff4d6;
+    --err: #b42318; --err-soft: #fdecea; --code-bg: #f2f3f5;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d; --panel: #1e2126; --border: #2e323a; --text: #e6e8ec;
+      --muted: #99a1ad; --accent: #7d88ff; --accent-soft: #262a45;
+      --ok: #5bd39a; --ok-soft: #16301f; --warn: #e8c26a; --warn-soft: #322912;
+      --err: #ff8b7e; --err-soft: #3a1c19; --code-bg: #15171b;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  header {
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 14px 20px; position: sticky; top: 0; z-index: 10;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .brand h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  .brand .sub { color: var(--muted); font-size: 12.5px; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+    border-radius: 999px; font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .p-ok   { background: var(--ok-soft);   color: var(--ok); }
+  .p-warn { background: var(--warn-soft); color: var(--warn); }
+  .p-err  { background: var(--err-soft);  color: var(--err); }
+  .p-mut  { background: var(--code-bg);   color: var(--muted); }
+
+  nav {
+    display: flex; gap: 2px; padding: 0 20px; background: var(--panel);
+    border-bottom: 1px solid var(--border); overflow-x: auto;
+  }
+  nav button {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    padding: 11px 13px; font-size: 13.5px; color: var(--muted);
+    cursor: pointer; font-weight: 550; white-space: nowrap;
+  }
+  nav button:hover { color: var(--text); }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  main { padding: 20px; max-width: 1180px; margin: 0 auto; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  .card h2 { font-size: 14.5px; margin: 0 0 4px; font-weight: 650; }
+  .card .hint { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+  input, select, textarea {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 7px; padding: 7px 10px; font-size: 13.5px; font-family: inherit;
+    min-width: 150px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  textarea { min-height: 60px; resize: vertical; width: 100%; }
+
+  button.btn {
+    background: var(--accent); color: #fff; border: none; border-radius: 7px;
+    padding: 8px 14px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  }
+  button.btn:hover { filter: brightness(1.08); }
+  button.btn:disabled { opacity: .5; cursor: not-allowed; }
+  button.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+  button.btn.sm { padding: 4px 9px; font-size: 12px; }
+  button.btn.danger { background: var(--err); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table-wrap { overflow-x: auto; }
+  th {
+    text-align: left; font-size: 11.5px; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--muted); padding: 8px 10px;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr.clickable:hover td { background: var(--accent-soft); cursor: pointer; }
+
+  .empty { color: var(--muted); font-size: 13px; padding: 18px; text-align: center; }
+  .id { font-size: 12px; color: var(--muted); }
+  .msg-body { max-width: 460px; overflow-wrap: anywhere; }
+
+  .banner {
+    border-radius: 8px; padding: 11px 13px; font-size: 12.5px;
+    border: 1px solid var(--border); margin-bottom: 14px; line-height: 1.55;
+  }
+  .banner.info { background: var(--accent-soft); border-color: transparent; }
+  .banner.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .banner b { font-weight: 650; }
+
+  .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .flow .step {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 9px; font-size: 11.5px; font-weight: 600;
+  }
+  .flow .arrow { color: var(--muted); font-size: 12px; }
+
+  #log { position: sticky; bottom: 0; }
+  #log pre {
+    background: var(--code-bg); border-radius: 7px; padding: 11px;
+    font-size: 11.5px; margin: 8px 0 0; max-height: 260px; overflow: auto;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .log-line { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+  .method { font-weight: 700; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+  .toast {
+    position: fixed; right: 18px; bottom: 18px; z-index: 50;
+    display: flex; flex-direction: column; gap: 8px; max-width: 360px;
+  }
+  .toast div {
+    padding: 10px 13px; border-radius: 8px; font-size: 12.5px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.18); line-height: 1.45;
+  }
+  .toast .t-ok  { background: var(--ok-soft);  color: var(--ok); }
+  .toast .t-err { background: var(--err-soft); color: var(--err); }
+  .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--border);
+          border-top-color: var(--accent); border-radius: 50%; animation: s .7s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>Discord Collection Service</h1>
+    <span class="sub">local console &mdash; every action calls the same REST API</span>
+    <div class="pills" id="statusPills"><span class="pill p-mut">checking&hellip;</span></div>
+    <button class="btn ghost sm" onclick="setApiKey()" id="keyBtn" title="Set the X-API-Key sent with every request">API key</button>
+  </div>
+</header>
+
+<nav id="nav">
+  <button data-tab="servers" class="active">1 &middot; Servers</button>
+  <button data-tab="channels">2 &middot; Channels &amp; Access</button>
+  <button data-tab="requests">3 &middot; Access Requests</button>
+  <button data-tab="collect">4 &middot; Collect &amp; Search</button>
+  <button data-tab="monitors">5 &middot; Monitors</button>
+  <button data-tab="events">6 &middot; Notifications</button>
+</nav>
+
+<main>
+
+  <!-- ================================================================ SERVERS -->
+  <section class="tab active" id="tab-servers">
+    <div class="banner info">
+      <b>Start here.</b> The bot can only see servers it has been <b>invited to</b>.
+      Discord provides no way for a bot to discover or search servers it is not a member of.
+      Click <b>Refresh from Discord</b> to pull the list.
+    </div>
+
+    <div class="card">
+      <h2>Servers (guilds)</h2>
+      <p class="hint"><code>GET /discord/guilds</code> &middot; <code>GET /discord/guilds/search</code></p>
+      <div class="row">
+        <div class="field">
+          <label>Search by name</label>
+          <input id="guildQuery" placeholder="e.g. threat" />
+        </div>
+        <button class="btn ghost" onclick="searchGuilds()">Search</button>
+        <button class="btn" onclick="loadGuilds(true)">Refresh from Discord</button>
+      </div>
+      <div class="table-wrap" style="margin-top:14px">
+        <table><thead><tr><th>Name</th><th>Guild ID</th><th>Available</th><th></th></tr></thead>
+        <tbody id="guildRows"><tr><td colspan="4" class="empty">Click &ldquo;Refresh from Discord&rdquo;.</td></tr></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================================================== CHANNELS -->
+  <section class="tab" id="tab-channels">
+    <div class="banner info">
+      <b>What the badges mean.</b>
+      <span class="pill p-ok"><span class="dot"></span>PUBLIC_ACCESSIBLE</span> visible to everyone and readable &middot;
+      <span class="pill p-ok"><span class="dot"></span>ACCESSIBLE</span> private, but an admin granted the bot access &middot;
+      <span class="pill p-warn"><span class="dot"></span>PRIVATE</span> the bot cannot read it yet &middot;
+      <span class="pill p-mut"><span class="dot"></span>UNKNOWN</span> not evaluated yet.
+      <div class="flow">
+        <span class="step">private channel</span><span class="arrow">&rarr;</span>
+        <span class="step">request access</span><span class="arrow">&rarr;</span>
+        <span class="step">PENDING</span><span class="arrow">&rarr;</span>
+        <span class="step">admin grants in Discord</span><span class="arrow">&rarr;</span>
+        <span class="step">re-check</span><span class="arrow">&rarr;</span>
+        <span class="step">ACCEPTED</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Channels in a server</h2>
+      <p class="hint"><code>GET /discord/guilds/{guild_id}/channels</code> &middot; <code>GET /discord/channels/search</code></p>
+      <div class="row">
+        <div class="field">
+          <label>Server</label>
+          <select id="channelGuildId"><option value="">— load servers first —</option></select>
+        </div>
+        <div class="field">
+          <label>Filter by name (optional)</label>
+          <input id="channelQuery" placeholder="e.g. general" />
+        </div>
+        <button class="btn" onclick="loadChannels()">Load channels</button>
+        <button class="btn ghost" onclick="evaluateAllChannels()">Load + evaluate access</button>
+        <button class="btn ghost" onclick="loadGuilds(true)">Reload servers</button>
+      </div>
+      <div class="table-wrap" style="margin-top:14px">
+        <table><thead><tr><th>Channel</th><th>Channel ID</th><th>Access</th><th>Private</th><th>Actions</th></tr></thead>
+        <tbody id="channelRows"><tr><td colspan="5" class="empty">Enter a guild id and load.</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Access evaluation</h2>
+      <p class="hint"><code>GET /discord/channels/{channel_id}</code> &mdash; asks Discord whether the bot can view the channel and read its history, and why not when it cannot.</p>
+      <div class="row">
+        <div class="field"><label>Channel ID</label><input id="evalChannelId" placeholder="#name or numeric id" /></div>
+        <button class="btn" onclick="evaluateChannel()">Evaluate</button>
+      </div>
+      <div id="evalResult"></div>
+    </div>
+  </section>
+
+  <!-- =============================================================== REQUESTS -->
+  <section class="tab" id="tab-requests">
+    <div class="banner warn">
+      <b>Discord has no &ldquo;approve access&rdquo; API.</b> An access request here is an
+      <b>internal record</b> in this service&rsquo;s own database. Nothing is sent to Discord.
+      It means: <i>we want this channel; re-check every 12 hours until a human server admin
+      grants the bot View Channel + Read Message History.</i>
+      <b>ACCEPTED</b> means our own re-check found the bot really can read it &mdash; not that Discord approved anything.
+    </div>
+
+    <div class="card">
+      <h2>Create an access request</h2>
+      <p class="hint"><code>POST /discord/channels/{channel_id}/access-request</code> &mdash; if the bot can already read the channel, no request is created.</p>
+      <div class="row">
+        <div class="field"><label>Channel ID</label><input id="reqChannelId" placeholder="#name or numeric id" /></div>
+        <div class="field"><label>Keywords (comma separated, optional)</label><input id="reqKeywords" placeholder="ransomware, malware" /></div>
+        <div class="field"><label>On grant</label>
+          <select id="reqOnGrant">
+            <option value="history">Collect history</option>
+            <option value="both">Collect history + start monitor</option>
+            <option value="none">Do nothing</option>
+          </select>
+        </div>
+        <button class="btn" onclick="createAccessRequest()">Request access</button>
+      </div>
+      <div id="reqResult"></div>
+    </div>
+
+    <div class="card">
+      <h2>Tracked requests</h2>
+      <p class="hint"><code>GET /discord/access-requests</code> &middot; <code>POST .../recheck</code> &middot; <code>POST .../cancel</code></p>
+      <div class="row">
+        <div class="field"><label>Status</label>
+          <select id="reqStatusFilter">
+            <option value="">All</option><option>PENDING</option><option>ACCEPTED</option>
+            <option>DENIED</option><option>EXPIRED</option><option>CANCELLED</option><option>ERROR</option>
+          </select>
+        </div>
+        <button class="btn ghost" onclick="loadRequests()">Reload</button>
+      </div>
+      <div class="table-wrap" style="margin-top:14px">
+        <table><thead><tr><th>#</th><th>Channel</th><th>Status</th><th>Checks</th><th>Next check</th><th>Actions</th></tr></thead>
+        <tbody id="requestRows"><tr><td colspan="6" class="empty">No requests loaded.</td></tr></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ COLLECT -->
+  <section class="tab" id="tab-collect">
+    <div class="banner info">
+      <b>Collection needs access first.</b> Scraping a channel the bot cannot read returns
+      <b>409 ACCESS_NOT_GRANTED</b> with the exact reason. Re-running a scrape is safe &mdash;
+      duplicates are rejected by a unique index on <code>(guild_id, channel_id, message_id)</code>.
+    </div>
+
+    <div class="card">
+      <h2>Collect historical messages</h2>
+      <p class="hint"><code>POST /discord/channels/{channel_id}/scrape</code> &mdash; pages backwards through Discord&rsquo;s history, 100 per request.</p>
+      <div class="row">
+        <div class="field"><label>Channel ID</label><input id="scrapeChannelId" placeholder="#name or numeric id" /></div>
+        <div class="field"><label>Max messages</label><input id="scrapeLimit" type="number" value="100" min="1" max="100000" /></div>
+        <div class="field"><label>Keywords (optional)</label><input id="scrapeKeywords" placeholder="ransomware, malware" /></div>
+        <div class="field"><label>Mode</label>
+          <select id="scrapeIncremental">
+            <option value="false">Full (from newest backwards)</option>
+            <option value="true">Incremental (only new since last run)</option>
+          </select>
+        </div>
+        <button class="btn" onclick="scrapeChannel()">Collect</button>
+      </div>
+      <div id="scrapeResult"></div>
+    </div>
+
+    <div class="card">
+      <h2>Search collected messages</h2>
+      <p class="hint"><code>POST /discord/search</code> &mdash; reads SQLite only, never calls Discord. Case-insensitive substring by default.</p>
+      <div class="row">
+        <div class="field"><label>Keywords (comma separated)</label><input id="searchKeywords" placeholder="ransomware, credential" /></div>
+        <div class="field"><label>Channel ID (optional)</label><input id="searchChannelId" placeholder="numeric id, blank = all" /></div>
+        <div class="field"><label>Author ID (optional)</label><input id="searchAuthorId" placeholder="find one account's posts" /></div>
+        <div class="field"><label>Match</label>
+          <select id="searchMode">
+            <option value="substring">substring</option><option value="word">whole word</option><option value="exact">exact message</option>
+          </select>
+        </div>
+        <div class="field"><label>Require</label>
+          <select id="searchAll"><option value="false">any keyword</option><option value="true">all keywords</option></select>
+        </div>
+        <button class="btn" onclick="searchMessages()">Search</button>
+      </div>
+      <div class="table-wrap" style="margin-top:14px">
+        <table><thead><tr><th>When</th><th>Author</th><th>Message</th><th>Matched</th><th></th></tr></thead>
+        <tbody id="searchRows"><tr><td colspan="5" class="empty">No search run yet.</td></tr></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- =============================================================== MONITORS -->
+  <section class="tab" id="tab-monitors">
+    <div class="banner info">
+      <b>A monitor only reaches RUNNING once access is confirmed.</b>
+      Start one on a private channel and it parks in <b>WAITING_FOR_ACCESS</b> and opens an
+      access request automatically. When an admin grants permission, the 12-hour worker
+      collects history and promotes it to RUNNING.
+      <div class="flow">
+        <span class="step">WAITING_FOR_ACCESS</span><span class="arrow">&rarr;</span>
+        <span class="step">history collected</span><span class="arrow">&rarr;</span>
+        <span class="step">STARTING</span><span class="arrow">&rarr;</span>
+        <span class="step">RUNNING</span><span class="arrow">&rarr;</span>
+        <span class="step">live messages</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Start / stop monitoring</h2>
+      <p class="hint"><code>POST /discord/channels/{channel_id}/monitor/start</code> &middot; <code>.../stop</code></p>
+      <div class="row">
+        <div class="field"><label>Channel ID</label><input id="monChannelId" placeholder="#name or numeric id" /></div>
+        <div class="field"><label>Keywords (optional)</label><input id="monKeywords" placeholder="ransomware" /></div>
+        <div class="field"><label>History</label>
+          <select id="monHistory"><option value="true">Collect history first</option><option value="false">Skip history</option></select>
+        </div>
+        <button class="btn" onclick="startMonitor()">Start</button>
+        <button class="btn danger" onclick="stopMonitor()">Stop</button>
+      </div>
+      <div id="monResult"></div>
+    </div>
+
+    <div class="card">
+      <h2>All monitors</h2>
+      <p class="hint"><code>GET /discord/monitors</code></p>
+      <button class="btn ghost" onclick="loadMonitors()">Reload</button>
+      <div class="table-wrap" style="margin-top:14px">
+        <table><thead><tr><th>Channel</th><th>Status</th><th>Seen</th><th>Matched</th><th>Last event</th><th></th></tr></thead>
+        <tbody id="monitorRows"><tr><td colspan="6" class="empty">No monitors loaded.</td></tr></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================= EVENTS -->
+  <section class="tab" id="tab-events">
+    <div class="banner info">
+      <b>Application notifications.</b> Every access-status transition is recorded here.
+      These are this service&rsquo;s own events &mdash; it never sends Discord DMs.
+    </div>
+    <div class="card">
+      <h2>Notification feed</h2>
+      <p class="hint"><code>GET /discord/notifications</code></p>
+      <div class="row">
+        <div class="field"><label>Event type</label>
+          <select id="eventType">
+            <option value="">All</option>
+            <option>ACCESS_REQUEST_CREATED</option><option>ACCESS_PENDING</option>
+            <option>ACCESS_GRANTED</option><option>ACCESS_DENIED</option>
+            <option>ACCESS_CHECK_FAILED</option><option>ACCESS_REVOKED</option>
+            <option>MONITOR_STARTED</option><option>MONITOR_STOPPED</option>
+            <option>MESSAGE_MATCHED</option><option>SYSTEM_ERROR</option>
+          </select>
+        </div>
+        <div class="field"><label>Unread only</label>
+          <select id="eventUnread"><option value="">No filter</option><option value="true">Unread</option><option value="false">Read</option></select>
+        </div>
+        <button class="btn ghost" onclick="loadEvents()">Reload</button>
+      </div>
+      <div class="table-wrap" style="margin-top:14px">
+        <table><thead><tr><th>When</th><th>Event</th><th>Message</th><th>Channel</th><th></th></tr></thead>
+        <tbody id="eventRows"><tr><td colspan="5" class="empty">No notifications loaded.</td></tr></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================================================================== LOG -->
+  <div class="card" id="log">
+    <h2>Last API call</h2>
+    <p class="hint">Every button above maps to one REST call. This shows exactly which one, so the UI doubles as documentation.</p>
+    <div class="log-line" id="logLine"><span class="id">nothing yet</span></div>
+    <pre id="logBody">&mdash;</pre>
+  </div>
+
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ----------------------------------------------------------------- helpers */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function toast(message, kind) {
+  const el = document.createElement("div");
+  el.className = kind === "err" ? "t-err" : "t-ok";
+  el.textContent = message;
+  $("toast").appendChild(el);
+  setTimeout(() => el.remove(), 5200);
+}
+
+function logCall(method, path, status, body) {
+  const ok = status >= 200 && status < 300;
+  $("logLine").innerHTML =
+    `<span class="method">${esc(method)}</span>` +
+    `<span class="mono">${esc(path)}</span>` +
+    `<span class="pill ${ok ? "p-ok" : "p-err"}">${status}</span>`;
+  $("logBody").textContent = body === undefined ? "(no body)" : JSON.stringify(body, null, 2);
+}
+
+/* API key: kept in this browser only, sent as X-API-Key. Never rendered on screen. */
+const KEY_STORAGE = "discord-service-api-key";
+const apiKey = () => { try { return localStorage.getItem(KEY_STORAGE) || ""; } catch { return ""; } };
+
+function setApiKey() {
+  const current = apiKey();
+  const next = window.prompt(
+    "API key sent as the X-API-Key header.
+
+Leave blank to clear. " +
+    "Only needed when the server has API_KEYS configured.",
+    current
+  );
+  if (next === null) return;
+  try {
+    if (next.trim()) localStorage.setItem(KEY_STORAGE, next.trim());
+    else localStorage.removeItem(KEY_STORAGE);
+  } catch { toast("This browser blocked local storage.", "err"); return; }
+  toast(next.trim() ? "API key saved in this browser" : "API key cleared");
+  refreshStatus();
+}
+
+/** Single place every request goes through, so the log is always accurate. */
+async function api(method, path, body) {
+  let response, data = null;
+  const headers = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const key = apiKey();
+  if (key) headers["X-API-Key"] = key;
+  try {
+    response = await fetch(path, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (networkError) {
+    logCall(method, path, 0, { error: String(networkError) });
+    throw new Error("Cannot reach the API. Is the service still running?");
+  }
+  try { data = await response.json(); } catch { /* empty body */ }
+  logCall(method, path, response.status, data);
+
+  if (!response.ok) {
+    throw new Error(friendlyError(data, response.status));
+  }
+  return data;
+}
+
+/** Turn an API error body into one readable sentence. Full JSON stays in the log panel. */
+function friendlyError(data, status) {
+  if (!data) return `HTTP ${status}`;
+
+  if (data.code === "VALIDATION_ERROR") {
+    const first = ((data.details || {}).errors || [])[0];
+    const field = first && first.location ? first.location[first.location.length - 1] : "input";
+    if (first && /pattern/.test(first.message || "")) {
+      return `"${field}" must be a numeric Discord id (a snowflake), not a name.`;
+    }
+    return `Invalid ${field}: ${(first && first.message) || "check the value"}.`;
+  }
+  if (data.code === "ACCESS_NOT_GRANTED") {
+    const reason = (data.details || {}).reason || "";
+    return `The bot cannot read that channel yet (${reason}). Create an access request on tab 3.`;
+  }
+  if (data.code === "DISCORD_NOT_CONFIGURED") {
+    return "No bot token configured. Set DISCORD_BOT_TOKEN in .env and restart.";
+  }
+  if (data.code === "UNAUTHORIZED") {
+    return "This server requires an API key. Click “API key” in the header and paste it.";
+  }
+  if (data.code === "NOT_FOUND") {
+    return data.message || "Not found.";
+  }
+  return data.message || `HTTP ${status}`;
+}
+
+/** Wrap a handler so failures surface as a toast instead of a silent console error. */
+function guard(fn) {
+  return async (...args) => {
+    try { return await fn(...args); }
+    catch (error) { toast(error.message, "err"); }
+  };
+}
+
+const qs = (params) =>
+  Object.entries(params)
+    .filter(([, v]) => v !== "" && v !== null && v !== undefined)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+
+const csv = (value) => value.split(",").map((s) => s.trim()).filter(Boolean);
+const when = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
+
+function statusPill(status) {
+  const good = ["ACCESSIBLE", "PUBLIC_ACCESSIBLE", "ACCEPTED", "RUNNING", "ok", "connected"];
+  const bad = ["ERROR", "DENIED", "EXPIRED", "error", "disconnected"];
+  const wait = ["PRIVATE", "PENDING", "WAITING_FOR_ACCESS", "STARTING", "degraded", "unconfigured"];
+  let cls = "p-mut";
+  if (good.includes(status)) cls = "p-ok";
+  else if (bad.includes(status)) cls = "p-err";
+  else if (wait.includes(status)) cls = "p-warn";
+  return `<span class="pill ${cls}"><span class="dot"></span>${esc(status)}</span>`;
+}
+
+function fillRows(tbodyId, rows, columns) {
+  const tbody = $(tbodyId);
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="${columns}" class="empty">Nothing to show.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.join("");
+}
+
+/* --------------------------------------------------------------- nav + health */
+$("nav").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-tab]");
+  if (!button) return;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+  button.classList.add("active");
+  $("tab-" + button.dataset.tab).classList.add("active");
+});
+
+async function refreshStatus() {
+  try {
+    const key = apiKey();
+    const response = await fetch("/discord/health", key ? { headers: { "X-API-Key": key } } : {});
+    if (response.status === 401) {
+      $("statusPills").innerHTML = `<span class="pill p-err"><span class="dot"></span>API key required</span>`;
+      return;
+    }
+    const health = await response.json();
+    const worker = health.worker || {};
+    const gateway = health.gateway || {};
+    const guilds = (health.counts && health.counts.guilds) || 0;
+    const bot = health.bot ? (health.bot.username || health.bot.id) : "not authenticated";
+    $("statusPills").innerHTML = [
+      statusPill(health.discord_configured ? (health.bot ? "connected" : "error") : "unconfigured"),
+      `<span class="pill p-mut"><span class="dot"></span>bot: ${esc(bot)}</span>`,
+      `<span class="pill ${gateway.status === "connected" ? "p-ok" : "p-mut"}"><span class="dot"></span>gateway: ${esc(gateway.status || "?")}</span>`,
+      `<span class="pill ${worker.running ? "p-ok" : "p-mut"}"><span class="dot"></span>worker: ${worker.running ? "running" : "off"}</span>`,
+      // The blocking number: a bot in zero servers can see nothing, however green
+      // every other pill is. Shown in red so it cannot be mistaken for healthy.
+      `<span class="pill ${guilds ? "p-ok" : "p-err"}"><span class="dot"></span>${guilds} server${guilds === 1 ? "" : "s"}</span>`,
+      `<span class="pill p-mut"><span class="dot"></span>${(health.counts && health.counts.messages) || 0} msgs</span>`,
+    ].join("");
+
+    if (!guilds) showInviteBanner();
+  } catch {
+    $("statusPills").innerHTML = `<span class="pill p-err"><span class="dot"></span>API unreachable</span>`;
+  }
+}
+
+/* ------------------------------------------------------------------- servers */
+const loadGuilds = guard(async (refresh) => {
+  const page = await api("GET", `/discord/guilds?${qs({ refresh: !!refresh, limit: 100 })}`);
+  renderGuilds(page.items);
+  toast(`${page.pagination.total} server(s) known`);
+});
+
+const searchGuilds = guard(async () => {
+  const query = $("guildQuery").value.trim();
+  if (!query) return loadGuilds(false);
+  const page = await api("GET", `/discord/guilds/search?${qs({ query, limit: 100 })}`);
+  renderGuilds(page.items);
+});
+
+/** Cache of known guilds, so name -> id resolution never needs a round trip. */
+let knownGuilds = [];
+
+function renderGuilds(items) {
+  knownGuilds = items;
+  populateGuildSelect(items);
+
+  if (!items.length) {
+    $("guildRows").innerHTML =
+      `<tr><td colspan="4" class="empty">The bot is not in any server yet.</td></tr>`;
+    showInviteBanner();
+    return;
+  }
+  fillRows("guildRows", items.map((g) => `
+    <tr>
+      <td><b>${esc(g.name || "(unnamed)")}</b></td>
+      <td class="mono id">${esc(g.guild_id)}</td>
+      <td>${g.is_available ? statusPill("ok") : statusPill("error")}</td>
+      <td><button class="btn sm" onclick="useGuild('${esc(g.guild_id)}')">View channels &rarr;</button></td>
+    </tr>`), 4);
+}
+
+/** Fill the Channels-tab dropdown so a server can never be typed wrongly. */
+function populateGuildSelect(items) {
+  const select = $("channelGuildId");
+  const previous = select.value;
+  select.innerHTML = items.length
+    ? items.map((g) => `<option value="${esc(g.guild_id)}">${esc(g.name || g.guild_id)}</option>`).join("")
+    : `<option value="">— no servers: invite the bot first —</option>`;
+  if (previous && items.some((g) => g.guild_id === previous)) select.value = previous;
+}
+
+/** The bot cannot see anything until it is invited, so say so with a usable link. */
+async function showInviteBanner() {
+  let applicationId = "";
+  try {
+    const bot = await api("GET", "/discord/bot");
+    applicationId = bot.application_id || bot.id;
+  } catch { /* health pills already report the reason */ }
+
+  const invite = applicationId
+    ? `https://discord.com/api/oauth2/authorize?client_id=${encodeURIComponent(applicationId)}&scope=bot&permissions=66560`
+    : null;
+
+  const existing = document.getElementById("inviteBanner");
+  if (existing) existing.remove();
+
+  const banner = document.createElement("div");
+  banner.id = "inviteBanner";
+  banner.className = "banner warn";
+  banner.innerHTML = `
+    <b>The bot has not been invited to any server.</b>
+    Discord gives a bot no visibility at all until a server admin invites it, so every
+    other tab will stay empty until you do this.
+    ${invite ? `<div style="margin-top:8px"><a href="${esc(invite)}" target="_blank" rel="noopener"><b>Open the invite link &rarr;</b></a>
+      <div class="id" style="margin-top:4px">Grants View Channel + Read Message History. You need &ldquo;Manage Server&rdquo; on the server you pick.</div></div>` : ""}
+    <div style="margin-top:8px">Then click <b>Refresh from Discord</b> above.</div>`;
+  $("tab-servers").prepend(banner);
+}
+
+function useGuild(guildId) {
+  $("channelGuildId").value = guildId;
+  document.querySelector('nav button[data-tab="channels"]').click();
+  loadChannels();
+}
+
+/* ------------------------------------------------------- name -> id resolution */
+
+/** Accept a snowflake, or resolve a channel name against what has been discovered. */
+async function resolveChannelId(value, { guildId = null } = {}) {
+  const text = String(value || "").trim();
+  if (!text) throw new Error("Enter a channel — pick one from the Channels tab, or paste its id.");
+  if (/^\d{1,20}$/.test(text)) return text;
+
+  const page = await api("GET", `/discord/channels/search?${qs({
+    query: text, guild_id: guildId, limit: 25,
+  })}`);
+  const matches = page.items;
+
+  if (!matches.length) {
+    throw new Error(
+      `No discovered channel matches "${text}". Load a server's channels on tab 2 first, ` +
+      `or paste the numeric id (Discord: enable Developer Mode, right-click the channel, Copy Channel ID).`
+    );
+  }
+  if (matches.length > 1) {
+    const names = matches.slice(0, 5).map((c) => `#${c.name} (${c.channel_id})`).join(", ");
+    throw new Error(`"${text}" matches ${matches.length} channels: ${names}. Use a more specific name or the id.`);
+  }
+  return matches[0].channel_id;
+}
+
+/* ------------------------------------------------------------------ channels */
+const loadChannels = guard(async (evaluate) => {
+  const guildId = $("channelGuildId").value.trim();
+  const query = $("channelQuery").value.trim();
+  if (!guildId) {
+    throw new Error("No server selected. Go to tab 1 and click “Refresh from Discord” first.");
+  }
+
+  let items;
+  if (query) {
+    const page = await api("GET", `/discord/channels/search?${qs({ query, guild_id: guildId, refresh: true, limit: 200 })}`);
+    items = page.items;
+  } else {
+    const page = await api("GET", `/discord/guilds/${guildId}/channels?${qs({ refresh: true, evaluate_access: !!evaluate, limit: 200 })}`);
+    items = page.items;
+  }
+  renderChannels(items);
+  toast(`${items.length} channel(s)`);
+});
+
+const evaluateAllChannels = guard(() => loadChannels(true));
+
+function renderChannels(items) {
+  fillRows("channelRows", items.map((c) => `
+    <tr>
+      <td><b>#${esc(c.name || "?")}</b></td>
+      <td class="mono id">${esc(c.channel_id)}</td>
+      <td>${statusPill(c.access_status)}${c.access_reason && c.access_status !== "PUBLIC_ACCESSIBLE"
+            ? `<div class="id">${esc(c.access_reason)}</div>` : ""}</td>
+      <td>${c.is_private ? "yes" : "no"}</td>
+      <td>
+        <button class="btn sm ghost" onclick="pickChannel('${esc(c.channel_id)}','eval')">Evaluate</button>
+        <button class="btn sm ghost" onclick="pickChannel('${esc(c.channel_id)}','request')">Request access</button>
+        <button class="btn sm ghost" onclick="pickChannel('${esc(c.channel_id)}','collect')">Collect</button>
+        <button class="btn sm ghost" onclick="pickChannel('${esc(c.channel_id)}','monitor')">Monitor</button>
+      </td>
+    </tr>`), 5);
+}
+
+/** Carry a channel id across tabs so the user never retypes a snowflake. */
+function pickChannel(channelId, target) {
+  const routes = {
+    eval:    ["evalChannelId", "channels", evaluateChannel],
+    request: ["reqChannelId", "requests", null],
+    collect: ["scrapeChannelId", "collect", null],
+    monitor: ["monChannelId", "monitors", null],
+  };
+  const [inputId, tab, action] = routes[target];
+  $(inputId).value = channelId;
+  document.querySelector(`nav button[data-tab="${tab}"]`).click();
+  if (action) action();
+}
+
+const evaluateChannel = guard(async () => {
+  const channelId = await resolveChannelId($("evalChannelId").value, {
+    guildId: $("channelGuildId").value || null,
+  });
+  $("evalChannelId").value = channelId;
+  const detail = await api("GET", `/discord/channels/${channelId}`);
+  const a = detail.access;
+  $("evalResult").innerHTML = `
+    <div class="banner ${a.collection_allowed ? "info" : "warn"}" style="margin-top:14px">
+      <b>#${esc(a.channel_name || "?")}</b> &mdash; ${statusPill(a.access_status)}
+      <div style="margin-top:8px">
+        can view: <b>${a.bot_can_view}</b> &middot;
+        can read history: <b>${a.bot_can_read_history}</b> &middot;
+        message content enabled: <b>${a.bot_can_read_message_content}</b> &middot;
+        private: <b>${a.is_private}</b>
+      </div>
+      <div style="margin-top:8px">reason: <code>${esc(a.reason)}</code></div>
+      <div style="margin-top:6px">${esc(a.detail || "")}</div>
+      <div style="margin-top:8px"><b>${a.collection_allowed
+        ? "Collection is allowed for this channel."
+        : "Collection is blocked. Create an access request and ask a Discord admin to grant the bot access."}</b></div>
+    </div>`;
+});
+
+/* ------------------------------------------------------------------ requests */
+const createAccessRequest = guard(async () => {
+  const channelId = await resolveChannelId($("reqChannelId").value);
+  $("reqChannelId").value = channelId;
+  const onGrant = $("reqOnGrant").value;
+  const keywords = csv($("reqKeywords").value);
+
+  const outcome = await api("POST", `/discord/channels/${channelId}/access-request`, {
+    collect_history_on_grant: onGrant !== "none",
+    monitor_on_grant: onGrant === "both",
+    keywords: keywords.length ? { keywords } : null,
+    requested_by: "console",
+  });
+
+  $("reqResult").innerHTML = `
+    <div class="banner ${outcome.already_accessible ? "info" : "warn"}" style="margin-top:14px">
+      <b>${esc(outcome.channel_name || outcome.channel_id)}</b>
+      &mdash; channel ${statusPill(outcome.channel_status)}
+      ${outcome.access_request_status ? "&middot; request " + statusPill(outcome.access_request_status) : ""}
+      <div style="margin-top:8px">${esc(outcome.message)}</div>
+      ${outcome.next_check_at ? `<div style="margin-top:6px">Next automatic re-check: <b>${when(outcome.next_check_at)}</b></div>` : ""}
+      ${outcome.scrape ? `<div style="margin-top:6px">Collected <b>${outcome.scrape.stored}</b> new message(s).</div>` : ""}
+    </div>`;
+  toast(outcome.already_accessible ? "Already accessible — no request needed" : "Access request pending");
+  loadRequests();
+});
+
+const loadRequests = guard(async () => {
+  const page = await api("GET", `/discord/access-requests?${qs({ status: $("reqStatusFilter").value, limit: 100 })}`);
+  fillRows("requestRows", page.items.map((r) => `
+    <tr>
+      <td class="id">#${r.id}</td>
+      <td><b>${esc(r.channel_name || "?")}</b><div class="mono id">${esc(r.channel_id)}</div></td>
+      <td>${statusPill(r.status)}${r.rejection_reason ? `<div class="id">${esc(r.rejection_reason)}</div>` : ""}</td>
+      <td>${r.check_count}</td>
+      <td class="id">${when(r.next_check_at)}</td>
+      <td>
+        ${r.status === "PENDING" ? `
+          <button class="btn sm" onclick="recheckRequest(${r.id})">Re-check now</button>
+          <button class="btn sm ghost" onclick="cancelRequest(${r.id})">Cancel</button>` : "—"}
+      </td>
+    </tr>`), 6);
+});
+
+const recheckRequest = guard(async (id) => {
+  const outcome = await api("POST", `/discord/access-requests/${id}/recheck`);
+  toast(`${outcome.access_request_status}: ${outcome.message}`,
+        outcome.access_request_status === "ACCEPTED" ? "ok" : "err");
+  loadRequests();
+  refreshStatus();
+});
+
+const cancelRequest = guard(async (id) => {
+  await api("POST", `/discord/access-requests/${id}/cancel`);
+  toast("Request cancelled");
+  loadRequests();
+});
+
+/* ------------------------------------------------------------------- collect */
+const scrapeChannel = guard(async () => {
+  const channelId = await resolveChannelId($("scrapeChannelId").value);
+  $("scrapeChannelId").value = channelId;
+  const keywords = csv($("scrapeKeywords").value);
+
+  const result = await api("POST", `/discord/channels/${channelId}/scrape`, {
+    limit: Number($("scrapeLimit").value) || 100,
+    incremental: $("scrapeIncremental").value === "true",
+    keywords: keywords.length ? { keywords } : null,
+  });
+
+  $("scrapeResult").innerHTML = `
+    <div class="banner info" style="margin-top:14px">
+      Fetched <b>${result.fetched}</b> &middot; stored <b>${result.stored}</b> new &middot;
+      skipped <b>${result.duplicates}</b> duplicate(s) &middot; matched <b>${result.matched}</b> &middot;
+      <b>${result.pages}</b> API page(s).
+      ${result.completed ? "" : `<div style="margin-top:6px"><b>Stopped early:</b> ${esc(result.stopped_reason || "")}</div>`}
+    </div>`;
+  toast(`Stored ${result.stored} new message(s)`);
+  refreshStatus();
+});
+
+const searchMessages = guard(async () => {
+  const page = await api("POST", "/discord/search", {
+    keywords: csv($("searchKeywords").value),
+    channel_id: $("searchChannelId").value.trim() || null,
+    author_id: $("searchAuthorId").value.trim() || null,
+    match_mode: $("searchMode").value,
+    match_all: $("searchAll").value === "true",
+    limit: 100,
+  });
+  fillRows("searchRows", page.items.map((hit) => {
+    const m = hit.message;
+    return `<tr>
+      <td class="id">${when(m.timestamp)}</td>
+      <td>${esc(m.author_name || "?")}${m.author_is_bot ? ' <span class="pill p-mut">bot</span>' : ""}
+          <div class="mono id">${esc(m.author_id || "")}</div></td>
+      <td class="msg-body">${esc(m.content || "(no content)")}</td>
+      <td>${hit.matched_keywords.map((k) => `<span class="pill p-ok">${esc(k)}</span>`).join(" ")}</td>
+      <td>${m.message_url ? `<a href="${esc(m.message_url)}" target="_blank" rel="noopener">open</a>` : ""}</td>
+    </tr>`;
+  }), 5);
+  toast(`${page.pagination.total} match(es)`);
+});
+
+/* ------------------------------------------------------------------ monitors */
+const startMonitor = guard(async () => {
+  const channelId = await resolveChannelId($("monChannelId").value);
+  $("monChannelId").value = channelId;
+  const keywords = csv($("monKeywords").value);
+
+  const result = await api("POST", `/discord/channels/${channelId}/monitor/start`, {
+    keywords: keywords.length ? { keywords } : null,
+    collect_history: $("monHistory").value === "true",
+  });
+
+  $("monResult").innerHTML = `
+    <div class="banner ${result.waiting_for_access ? "warn" : "info"}" style="margin-top:14px">
+      Monitor ${statusPill(result.monitor.status)}
+      <div style="margin-top:8px">${esc(result.message)}</div>
+      ${result.scrape ? `<div style="margin-top:6px">Collected <b>${result.scrape.stored}</b> message(s) first.</div>` : ""}
+      ${result.access_request ? `<div style="margin-top:6px">Access request <b>#${result.access_request.id}</b> is ${esc(result.access_request.status)}.</div>` : ""}
+    </div>`;
+  toast(result.waiting_for_access ? "Waiting for access" : "Monitor running");
+  loadMonitors();
+  refreshStatus();
+});
+
+const stopMonitor = guard(async () => {
+  const channelId = await resolveChannelId($("monChannelId").value);
+  const monitor = await api("POST", `/discord/channels/${channelId}/monitor/stop`, { reason: "stopped from console" });
+  toast(`Monitor ${monitor.status}`);
+  loadMonitors();
+});
+
+const loadMonitors = guard(async () => {
+  const page = await api("GET", "/discord/monitors?limit=100");
+  fillRows("monitorRows", page.items.map((m) => `
+    <tr>
+      <td class="mono id">${esc(m.channel_id)}</td>
+      <td>${statusPill(m.status)}${m.last_error ? `<div class="id">${esc(m.last_error)}</div>` : ""}</td>
+      <td>${m.messages_seen}</td>
+      <td>${m.messages_matched}</td>
+      <td class="id">${when(m.last_event_at)}</td>
+      <td><button class="btn sm ghost" onclick="pickChannel('${esc(m.channel_id)}','monitor')">Use</button></td>
+    </tr>`), 6);
+});
+
+/* -------------------------------------------------------------------- events */
+const loadEvents = guard(async () => {
+  const page = await api("GET", `/discord/notifications?${qs({
+    event_type: $("eventType").value, unread: $("eventUnread").value, limit: 100,
+  })}`);
+  fillRows("eventRows", page.items.map((n) => `
+    <tr>
+      <td class="id">${when(n.created_at)}</td>
+      <td>${statusPill(n.event_type)}</td>
+      <td>${esc(n.message)}</td>
+      <td class="mono id">${esc(n.channel_id || "")}</td>
+      <td>${n.read_at ? '<span class="id">read</span>'
+            : `<button class="btn sm ghost" onclick="markRead(${n.id})">Mark read</button>`}</td>
+    </tr>`), 5);
+});
+
+const markRead = guard(async (id) => {
+  await api("POST", `/discord/notifications/${id}/read`);
+  loadEvents();
+});
+
+/* ---------------------------------------------------------------------- boot */
+refreshStatus();
+setInterval(refreshStatus, 15000);
+// Populate the server dropdown from what is already stored, without hitting Discord.
+loadGuilds(false);
+</script>
+</body>
+</html>
