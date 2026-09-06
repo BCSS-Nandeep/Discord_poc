@@ -141,3 +141,35 @@ def test_status_bar_surfaces_the_server_count(app_client: TestClient):
     assert 'health.counts && health.counts.guilds' in html
     assert 'server${guilds === 1 ? "" : "s"}' in html
     assert "if (!guilds) showInviteBanner();" in html
+
+
+def _console_javascript(html: str) -> str:
+    """Extract the inline script blocks from the console page."""
+
+    import re
+
+    return "\n".join(re.findall(r"<script>(.*?)</script>", html, re.S))
+
+
+def test_console_javascript_parses(app_client: TestClient, tmp_path):
+    """The console's JS must actually parse.
+
+    A broken string literal once shipped silently: the page rendered, but the whole
+    script failed to execute, so the status bar sat on "checking..." forever and no
+    button worked. Substring assertions cannot catch that -- only a real parse can.
+    """
+
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed; cannot syntax-check the console JS")
+
+    script = tmp_path / "console.js"
+    script.write_text(_console_javascript(app_client.get("/ui").text), encoding="utf-8")
+
+    result = subprocess.run(
+        [node, "--check", str(script)], capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, f"console JS has a syntax error:\n{result.stderr}"

@@ -458,9 +458,7 @@ const apiKey = () => { try { return localStorage.getItem(KEY_STORAGE) || ""; } c
 function setApiKey() {
   const current = apiKey();
   const next = window.prompt(
-    "API key sent as the X-API-Key header.
-
-Leave blank to clear. " +
+    "API key sent as the X-API-Key header. Leave blank to clear. " +
     "Only needed when the server has API_KEYS configured.",
     current
   );
