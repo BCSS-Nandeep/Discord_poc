@@ -25,6 +25,7 @@ router = APIRouter(tags=["console"])
 
 UI_FILE = Path(__file__).resolve().parent.parent / "ui" / "index.html"
 EXPLORER_FILE = Path(__file__).resolve().parent.parent / "ui" / "explorer.html"
+CONSOLE_FILE = Path(__file__).resolve().parent.parent / "ui" / "console.html"
 
 
 @router.get(
@@ -73,6 +74,30 @@ async def explorer() -> HTMLResponse:
             details={"expected": str(EXPLORER_FILE)},
         )
     return HTMLResponse(EXPLORER_FILE.read_text(encoding="utf-8"))
+
+
+@router.get(
+    "/console",
+    response_class=HTMLResponse,
+    summary="Wire-log console",
+    description=(
+        "A denser, single-page console: server/channel tables with an inline detail "
+        "panel, an editable API base URL, and a live wire log of every request and "
+        "response next to the working area. Covers the same ground as /ui with a more "
+        "compact, log-driven layout. For the guided step-by-step flow use /ui; for a "
+        "generic per-endpoint tester generated from the OpenAPI schema use /explorer."
+    ),
+    include_in_schema=False,
+)
+async def console_page() -> HTMLResponse:
+    """Return the wire-log console page."""
+
+    if not CONSOLE_FILE.is_file():  # pragma: no cover - only if the file is deleted
+        raise NotFoundError(
+            "Console asset is missing from this installation",
+            details={"expected": str(CONSOLE_FILE)},
+        )
+    return HTMLResponse(CONSOLE_FILE.read_text(encoding="utf-8"))
 
 
 @router.get("/", include_in_schema=False)

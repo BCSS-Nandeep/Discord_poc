@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Discord Service Console</title>
+<style>
+/* Same design language as the reference console this was modeled on: IBM-Plex-style
+   monospace/condensed look, a petrol primary + domain-accent secondary, a wire log of
+   every call, and an origin-guard banner. Deliberately uses system fonts rather than
+   Google Fonts (the reference's choice) to keep this page's own no-external-assets
+   guarantee: it must render correctly with no network access at all. */
+:root{
+  --ground:#eef2f3; --surface:#fff; --surface-2:#f5f8f9; --surface-3:#eaf0f2;
+  --ink:#101a1f; --ink-2:#3d505a; --muted:#667c87;
+  --line:#d3dde1; --line-soft:#e4ebee;
+  --petrol:#17505f; --petrol-soft:#dbe8ec; --petrol-ink:#0d3742;
+  --dc:#4552c9; --dc-soft:#e8e9fb;
+  --db:#3d6b1f; --db-soft:#e6f0dc;
+  --warn:#8a6100; --warn-soft:#fbf1d6;
+  --danger:#a52a1f; --danger-soft:#fbe9e7;
+  --none:#66788a; --none-soft:#e6eaee;
+  --on-accent:#ffffff;
+  --shadow:0 1px 2px rgba(16,26,31,.06),0 10px 28px -16px rgba(16,26,31,.28);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0c1418; --surface:#131e23; --surface-2:#18262c; --surface-3:#1d2f36;
+    --ink:#e8f0f2; --ink-2:#adc0c8; --muted:#7f97a1;
+    --line:#274049; --line-soft:#1d3038;
+    --petrol:#7cc6da; --petrol-soft:#173038; --petrol-ink:#c8e8f2;
+    --dc:#9aa3f0; --dc-soft:#20223f;
+    --db:#94c96a; --db-soft:#1e2d14;
+    --warn:#e3bd5c; --warn-soft:#2f2510;
+    --danger:#f08a7c; --danger-soft:#37170f;
+    --none:#8ea3b0; --none-soft:#1e2a31;
+    --on-accent:#0c1418;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0c1418; --surface:#131e23; --surface-2:#18262c; --surface-3:#1d2f36;
+  --ink:#e8f0f2; --ink-2:#adc0c8; --muted:#7f97a1;
+  --line:#274049; --line-soft:#1d3038;
+  --petrol:#7cc6da; --petrol-soft:#173038; --petrol-ink:#c8e8f2;
+  --dc:#9aa3f0; --dc-soft:#20223f;
+  --db:#94c96a; --db-soft:#1e2d14;
+  --warn:#e3bd5c; --warn-soft:#2f2510;
+  --danger:#f08a7c; --danger-soft:#37170f;
+  --none:#8ea3b0; --none-soft:#1e2a31;
+  --on-accent:#0c1418;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -16px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.5}
+code,.mono,input,select,textarea,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+h1,h2,h3{font-family:inherit;margin:0}
+
+.app{display:grid;grid-template-rows:auto 1fr;height:100vh}
+header{background:var(--surface);border-bottom:1px solid var(--line);padding:10px 16px;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+.brand h1{font-size:18px;letter-spacing:-.01em}
+.brand .v{font-size:11px;color:var(--muted);font-family:ui-monospace,monospace}
+.baseurl{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.baseurl input{width:190px}
+header a.navlink{font-size:12.5px;color:var(--petrol);text-decoration:none;font-weight:600}
+header a.navlink:hover{text-decoration:underline}
+
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+  font-size:12px;font-weight:600;border:1px solid transparent;white-space:nowrap}
+.pill .dot{width:7px;height:7px;border-radius:50%;flex:none;background:currentColor}
+.pill.ok{background:var(--db-soft);color:var(--db)}
+.pill.bad{background:var(--danger-soft);color:var(--danger)}
+.pill.wait{background:var(--warn-soft);color:var(--warn)}
+.pill.idle{background:var(--none-soft);color:var(--none)}
+.pill.dc{background:var(--dc-soft);color:var(--dc)}
+
+.main{display:grid;grid-template-columns:1fr 400px;overflow:hidden}
+@media (max-width:1080px){.main{grid-template-columns:1fr}.wire{display:none}}
+.work{overflow-y:auto;padding:16px 18px 40px}
+
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap}
+.tab{background:none;border:0;border-bottom:2px solid transparent;padding:8px 13px;
+  font:inherit;font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--petrol);border-bottom-color:var(--petrol)}
+.tab:focus-visible{outline:2px solid var(--petrol);outline-offset:-2px}
+.panel[hidden]{display:none}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:5px;
+  padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card > h2{font-size:15px;margin-bottom:3px}
+.card > .sub{color:var(--muted);font-size:12.5px;margin:0 0 12px}
+.card > .sub code{font-size:11.5px}
+
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.f{display:flex;flex-direction:column;gap:4px}
+.f label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+input,select,textarea{background:var(--surface-2);color:var(--ink);border:1px solid var(--line);
+  border-radius:3px;padding:6px 8px;font-size:13px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--petrol);outline-offset:-1px;border-color:var(--petrol)}
+input[type=checkbox]{width:15px;height:15px;accent-color:var(--petrol)}
+.f.chk{flex-direction:row;align-items:center;gap:6px;padding-bottom:6px}
+.f.chk label{text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);font-weight:400}
+.grow{flex:1;min-width:150px}
+
+button.btn{font:inherit;font-weight:600;font-size:13px;padding:6px 12px;border-radius:3px;
+  border:1px solid var(--petrol);background:var(--petrol);color:var(--on-accent);
+  cursor:pointer;white-space:nowrap}
+button.btn:hover{filter:brightness(1.08)}
+button.btn:focus-visible{outline:2px solid var(--petrol);outline-offset:2px}
+button.btn[disabled]{opacity:.4;cursor:not-allowed;filter:none}
+button.btn.ghost{background:none;color:var(--petrol);border-color:var(--line)}
+button.btn.ghost:hover{background:var(--petrol-soft)}
+button.btn.warn{background:var(--dc);border-color:var(--dc);color:#fff}
+button.btn.danger{background:none;color:var(--danger);border-color:var(--danger)}
+button.btn.danger:hover{background:var(--danger-soft)}
+button.btn.sm{padding:3px 8px;font-size:12px}
+
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;background:var(--surface-3);color:var(--petrol);font-size:11px;
+  letter-spacing:.07em;text-transform:uppercase;padding:7px 10px;border-bottom:1px solid var(--line);
+  position:sticky;top:0;white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--surface-2)}
+tbody tr[aria-selected="true"]{background:var(--surface-3)}
+tbody tr[aria-selected="true"] td:first-child{box-shadow:inset 3px 0 0 var(--petrol)}
+td.num{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.id{font-family:ui-monospace,monospace;color:var(--muted)}
+.trunc{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{padding:22px;text-align:center;color:var(--muted);font-size:13px}
+
+.st{font-family:ui-monospace,monospace;font-size:11px;font-weight:600;padding:2px 7px;
+  border-radius:3px;white-space:nowrap;background:var(--none-soft);color:var(--none)}
+.st.good{background:var(--db-soft);color:var(--db)}
+.st.pend{background:var(--warn-soft);color:var(--warn)}
+.st.bad{background:var(--danger-soft);color:var(--danger)}
+.st.live{background:var(--petrol-soft);color:var(--petrol)}
+
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:flex-end}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px 16px;
+  margin-top:10px;font-size:12.5px}
+.meta div span{display:block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);font-weight:600}
+.meta div b{font-family:ui-monospace,monospace;font-weight:500;word-break:break-all}
+
+.hintbox{border-left:3px solid var(--dc);background:var(--dc-soft);padding:8px 11px;
+  border-radius:0 3px 3px 0;font-size:12.5px;margin-top:10px}
+.hintbox b{display:block}
+
+.res{margin-top:12px}
+.res-hd{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.res-hd h3{font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.warnbox{background:var(--warn-soft);border-left:3px solid var(--warn);padding:7px 10px;
+  font-size:12.5px;border-radius:0 3px 3px 0;margin-bottom:8px}
+.msg{border:1px solid var(--line);border-radius:4px;padding:9px 11px;margin-bottom:7px;background:var(--surface)}
+.msg-hd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-bottom:4px}
+.msg-hd .who{color:var(--ink);font-weight:600}
+.msg-body{font-size:13.5px;white-space:pre-wrap;word-break:break-word;max-height:8em;overflow:auto}
+.msg-ft{margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tagx{font-family:ui-monospace,monospace;font-size:10.5px;padding:1px 6px;border-radius:3px;
+  background:var(--surface-2);border:1px solid var(--line-soft);color:var(--muted)}
+.tagx.match{background:var(--db-soft);color:var(--db);border-color:transparent}
+a{color:var(--petrol)}
+
+.wire{background:var(--surface);border-left:1px solid var(--line);display:grid;
+  grid-template-rows:auto 1fr;overflow:hidden}
+.wire-hd{padding:9px 13px;border-bottom:1px solid var(--line);display:flex;
+  align-items:center;justify-content:space-between;gap:8px}
+.wire-hd h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.wire-list{overflow-y:auto;padding:8px}
+.entry{border:1px solid var(--line-soft);border-left:3px solid var(--none);border-radius:3px;
+  margin-bottom:6px;background:var(--surface-2)}
+.entry.ok{border-left-color:var(--db)} .entry.err{border-left-color:var(--danger)}
+.entry summary{padding:6px 9px;cursor:pointer;display:flex;gap:7px;align-items:center;
+  font-size:11.5px;font-family:ui-monospace,monospace;list-style:none}
+.entry summary::-webkit-details-marker{display:none}
+.entry summary .st-code{font-weight:600;min-width:30px}
+.entry.ok .st-code{color:var(--db)} .entry.err .st-code{color:var(--danger)}
+.entry summary .m{color:var(--muted);min-width:44px}
+.entry summary .u{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.entry summary .ms{color:var(--muted)}
+.entry pre{margin:0;padding:8px 9px;border-top:1px solid var(--line-soft);font-size:11px;
+  line-height:1.45;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+
+.banner{border:1px solid var(--danger);border-left:4px solid var(--danger);background:var(--danger-soft);
+  border-radius:4px;padding:12px 15px;margin-bottom:14px}
+.banner h2{font-size:15px;color:var(--danger);margin-bottom:4px}
+.banner p{margin:0 0 8px;font-size:13px;color:var(--ink)}
+.banner .fixlink{display:inline-block;font-family:ui-monospace,monospace;font-size:14px;font-weight:600;
+  background:var(--surface);border:1px solid var(--danger);border-radius:3px;padding:6px 12px;
+  color:var(--danger);text-decoration:none}
+.banner .fixlink:hover{background:var(--danger);color:var(--surface)}
+.banner details{margin-top:9px;font-size:12.5px;color:var(--ink-2)}
+.banner summary{cursor:pointer;font-weight:600;color:var(--danger)}
+.banner details p{margin:6px 0 0;font-size:12.5px;color:var(--ink-2)}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;z-index:50;
+  background:var(--ink);color:var(--ground);padding:9px 16px;border-radius:4px;font-size:13px;
+  box-shadow:var(--shadow);max-width:80vw}
+.toast.err{background:var(--danger);color:#fff}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <div class="brand">
+    <h1>Discord Service Console</h1>
+    <span class="v">v1.0.0</span>
+  </div>
+  <div class="baseurl">
+    <label for="base">API</label>
+    <input id="base" value="" spellcheck="false">
+  </div>
+  <span class="pill idle" id="connPill"><span class="dot"></span> checking&hellip;</span>
+  <button class="btn ghost sm" id="refreshAll">Refresh</button>
+  <button class="btn ghost sm" id="keyBtn">API key</button>
+  <button class="btn ghost sm" id="themeBtn" title="Toggle theme">Theme</button>
+  <a class="navlink" href="/ui">Guided console</a>
+  <a class="navlink" href="/explorer">API explorer</a>
+</header>
+
+<div class="main">
+<div class="work">
+
+  <div class="banner" id="originWarn" hidden></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true"  data-p="p-conn">Connection</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="p-src">Guilds &amp; channels</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="p-req">Access requests</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="p-mon">Monitors</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="p-search">Search</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="p-disc">Discovery</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="p-notif">Notifications</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="p-raw">Raw request</button>
+  </div>
+
+  <!-- ============ CONNECTION ============ -->
+  <section class="panel" id="p-conn">
+    <div class="card">
+      <h2>Service health</h2>
+      <p class="sub"><code>GET /health</code> &middot; <code>GET /discord/health</code> &mdash; the bot token itself is set via <code>DISCORD_BOT_TOKEN</code> in the service's environment; this console can only report its state, never view or change it.</p>
+      <div class="row">
+        <button class="btn" id="btnStatus">Check status</button>
+      </div>
+      <div class="meta" id="statusMeta"></div>
+    </div>
+
+    <div class="card">
+      <h2>Authentication to this API</h2>
+      <p class="sub">Every <code>/discord/*</code> endpoint accepts an <code>X-API-Key</code> header or a signed-in Discord session cookie. Neither is required when the server has no <code>API_KEYS</code> configured.</p>
+      <div class="row">
+        <button class="btn ghost" id="btnSetKey">Set API key</button>
+        <a class="btn ghost" id="loginLink" href="/auth/discord/login" style="text-decoration:none;display:none">Log in with Discord</a>
+        <button class="btn ghost" id="btnLogout" style="display:none">Log out</button>
+      </div>
+      <div class="meta" id="authMeta"></div>
+    </div>
+  </section>
+
+  <!-- ============ GUILDS & CHANNELS ============ -->
+  <section class="panel" id="p-src" hidden>
+    <div class="card">
+      <h2>Servers <span class="pill dc" style="vertical-align:middle"><span class="dot"></span>hits Discord</span></h2>
+      <p class="sub"><code>GET /discord/guilds?refresh=true</code> &mdash; the bot only sees servers it has been invited to. Discord provides no API for a bot to discover or join a server on its own.</p>
+      <div class="row">
+        <button class="btn warn" id="btnGuilds">Refresh from Discord</button>
+      </div>
+      <div class="tbl-wrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Name</th><th>Guild ID</th><th>Available</th><th>Monitoring</th><th></th></tr></thead>
+          <tbody id="guildRows"><tr><td colspan="5" class="empty">Click &ldquo;Refresh from Discord&rdquo;.</td></tr></tbody>
+        </table>
+      </div>
+      <div id="inviteHint"></div>
+    </div>
+
+    <div class="card" id="channelsCard" hidden>
+      <h2>Channels <span id="channelsGuildLabel"></span></h2>
+      <p class="sub"><code>GET /discord/guilds/{id}/channels?refresh=true&amp;evaluate_access=true</code> &mdash; evaluating access costs one or two extra Discord calls per text channel.</p>
+      <div class="row">
+        <button class="btn warn" id="btnChannels">Refresh + evaluate access</button>
+        <div class="f grow"><label for="chanFilter">Filter by name</label><input id="chanFilter" placeholder="e.g. general"></div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Channel</th><th>Channel ID</th><th>Type</th><th>Access</th><th>Private</th></tr></thead>
+          <tbody id="chanRows"><tr><td colspan="5" class="empty">No channels loaded.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="chanDetailCard" hidden>
+      <h2>Channel detail</h2>
+      <p class="sub" id="chanDetailSub"></p>
+      <div class="meta" id="chanMeta"></div>
+      <div class="row" style="margin-top:12px">
+        <div class="f grow"><label for="actKeywords">Keywords (comma separated)</label><input id="actKeywords" placeholder="ransomware, credential"></div>
+        <div class="f chk"><input type="checkbox" id="actHistory" checked><label for="actHistory">Collect history on grant</label></div>
+        <div class="f chk"><input type="checkbox" id="actMonitorToo"><label for="actMonitorToo">Also monitor on grant</label></div>
+      </div>
+      <div class="actions">
+        <button class="btn ghost sm" data-a="eval">Evaluate access</button>
+        <button class="btn warn sm" data-a="request">Request access</button>
+        <button class="btn warn sm" data-a="scrape">Scrape 100</button>
+        <button class="btn warn sm" data-a="scrape-inc">Scrape (incremental)</button>
+        <button class="btn sm" data-a="monstart">Start monitor</button>
+        <button class="btn ghost sm" data-a="monstop">Stop monitor</button>
+        <button class="btn ghost sm" data-a="monstatus">Monitor status</button>
+        <button class="btn ghost sm" data-a="messages">View stored messages</button>
+        <button class="btn ghost sm" data-a="viewreq" id="viewReqBtn" style="display:none">View access request</button>
+      </div>
+      <div class="res" id="chanActionRes"></div>
+    </div>
+  </section>
+
+  <!-- ============ ACCESS REQUESTS ============ -->
+  <section class="panel" id="p-req" hidden>
+    <div class="card">
+      <h2>Access requests <span class="pill ok" style="vertical-align:middle"><span class="dot"></span>local only</span></h2>
+      <p class="sub"><code>GET /discord/access-requests</code></p>
+      <div class="hintbox"><b>This is an application-level record, not a Discord approval.</b>
+        Discord has no API for a bot to request private-channel access. <code>PENDING</code> means we are
+        waiting for a human Discord server administrator to grant the bot View Channel + Read Message History
+        by hand, re-checked automatically every 12 hours. <code>ACCEPTED</code> means our own re-check found
+        the bot can genuinely read the channel &mdash; not that Discord approved anything.</div>
+      <div class="row" style="margin-top:10px">
+        <div class="f"><label for="reqStatus">Status</label>
+          <select id="reqStatus"><option value="">all</option><option>PENDING</option><option>ACCEPTED</option>
+            <option>DENIED</option><option>EXPIRED</option><option>CANCELLED</option><option>ERROR</option></select></div>
+        <button class="btn" id="btnReqLoad">Load</button>
+      </div>
+      <div class="res" id="reqRes"></div>
+    </div>
+  </section>
+
+  <!-- ============ MONITORS ============ -->
+  <section class="panel" id="p-mon" hidden>
+    <div class="card">
+      <h2>Monitors <span class="pill ok" style="vertical-align:middle"><span class="dot"></span>local only</span></h2>
+      <p class="sub"><code>GET /discord/monitors</code> &mdash; a monitor only reaches <code>RUNNING</code> once access is confirmed; on a private channel it parks in <code>WAITING_FOR_ACCESS</code> until an admin grants permission.</p>
+      <div class="row">
+        <div class="f"><label for="monStatus">Status</label>
+          <select id="monStatus"><option value="">all</option><option>RUNNING</option><option>WAITING_FOR_ACCESS</option>
+            <option>STARTING</option><option>STOPPED</option><option>PAUSED</option><option>ERROR</option></select></div>
+        <button class="btn" id="btnMonLoad">Load</button>
+      </div>
+      <div class="res" id="monRes"></div>
+    </div>
+  </section>
+
+  <!-- ============ SEARCH ============ -->
+  <section class="panel" id="p-search" hidden>
+    <div class="card">
+      <h2>Search stored messages <span class="pill ok" style="vertical-align:middle"><span class="dot"></span>local only</span></h2>
+      <p class="sub"><code>POST /discord/search</code> &mdash; Discord provides no cross-server search API for bots; this searches only what has already been collected via scrape or live monitoring.</p>
+      <div class="row">
+        <div class="f grow"><label for="sq">Keywords (comma separated)</label><input id="sq" placeholder="ransomware, credential"></div>
+        <div class="f"><label for="schan">Channel ID</label><input id="schan" placeholder="optional" style="width:150px"></div>
+        <div class="f"><label for="sguild">Guild ID</label><input id="sguild" placeholder="optional" style="width:150px"></div>
+        <div class="f"><label for="sauthor">Author ID</label><input id="sauthor" placeholder="optional" style="width:150px"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div class="f"><label for="smode">Match</label>
+          <select id="smode"><option value="substring">substring</option><option value="word">whole word</option><option value="exact">exact</option></select></div>
+        <div class="f"><label for="sall">Require</label>
+          <select id="sall"><option value="false">any keyword</option><option value="true">all keywords</option></select></div>
+        <div class="f"><label for="slimit">Limit</label><input id="slimit" type="number" value="50" min="1" max="1000" style="width:80px"></div>
+        <button class="btn" id="btnSearch">Search</button>
+      </div>
+      <div class="res" id="searchRes"></div>
+    </div>
+  </section>
+
+  <!-- ============ DISCOVERY ============ -->
+  <section class="panel" id="p-disc" hidden>
+    <div class="card">
+      <h2>Find a server by name <span class="pill dc" style="vertical-align:middle"><span class="dot"></span>hits Discord</span></h2>
+      <p class="sub"><code>GET /discord/guilds/search</code> &mdash; only searches servers the bot is already in.</p>
+      <div class="row">
+        <div class="f grow"><label for="gsq">Name</label><input id="gsq" placeholder="e.g. threat"></div>
+        <button class="btn warn" id="btnGuildSearch">Search</button>
+      </div>
+      <div class="res" id="guildSearchRes"></div>
+    </div>
+
+    <div class="card">
+      <h2>Find a channel by name</h2>
+      <p class="sub"><code>GET /discord/channels/search</code> &mdash; reads channels already discovered into SQLite. Add a guild id and tick refresh to discover as part of the search.</p>
+      <div class="row">
+        <div class="f grow"><label for="csq">Name</label><input id="csq" placeholder="e.g. general"></div>
+        <div class="f"><label for="csgid">Guild ID</label><input id="csgid" placeholder="optional" style="width:150px"></div>
+        <div class="f chk"><input type="checkbox" id="csrefresh"><label for="csrefresh">Refresh first</label></div>
+        <button class="btn warn" id="btnChanSearch2">Search</button>
+      </div>
+      <div class="res" id="chanSearchRes"></div>
+    </div>
+
+    <div class="card">
+      <h2>Invite the bot to a server</h2>
+      <p class="sub">Adding a bot to a server is a Discord-native OAuth2 action a human must complete &mdash; no API call can do it. <b>A human being a member of a server does not grant the bot access</b>; the bot must be independently authorized.</p>
+      <div class="row">
+        <a class="btn warn" id="inviteLink" href="#" target="_blank" rel="noopener" style="text-decoration:none">Open Discord invite link</a>
+        <button class="btn ghost" id="btnCopyInvite">Copy link</button>
+      </div>
+      <div class="hintbox"><b>Only a server admin with &ldquo;Manage Server&rdquo; can complete this.</b>
+        The link requests View Channel + Read Message History only &mdash; never Administrator.</div>
+    </div>
+  </section>
+
+  <!-- ============ NOTIFICATIONS ============ -->
+  <section class="panel" id="p-notif" hidden>
+    <div class="card">
+      <h2>Notifications <span class="pill ok" style="vertical-align:middle"><span class="dot"></span>local only</span></h2>
+      <p class="sub"><code>GET /discord/notifications</code> &mdash; every access-status transition and matched-message event this service recorded. These are the application's own records; it never sends Discord DMs.</p>
+      <div class="row">
+        <div class="f"><label for="notifType">Event type</label>
+          <select id="notifType"><option value="">all</option><option>ACCESS_REQUEST_CREATED</option><option>ACCESS_PENDING</option>
+            <option>ACCESS_GRANTED</option><option>ACCESS_DENIED</option><option>ACCESS_CHECK_FAILED</option>
+            <option>ACCESS_REVOKED</option><option>GUILD_MONITORING_ENABLED</option><option>GUILD_MONITORING_DISABLED</option>
+            <option>MONITOR_STARTED</option><option>MONITOR_STOPPED</option><option>MESSAGE_MATCHED</option><option>SYSTEM_ERROR</option></select></div>
+        <div class="f chk"><input type="checkbox" id="unreadOnly"><label for="unreadOnly">Unread only</label></div>
+        <button class="btn" id="btnNotif">Load</button>
+      </div>
+      <div class="res" id="notifRes"></div>
+    </div>
+  </section>
+
+  <!-- ============ RAW ============ -->
+  <section class="panel" id="p-raw" hidden>
+    <div class="card">
+      <h2>Raw request</h2>
+      <p class="sub">Anything not covered above &mdash; or see <a href="/explorer">/explorer</a> for a form generated from every documented endpoint.</p>
+      <div class="row">
+        <div class="f"><label for="rawM">Method</label>
+          <select id="rawM"><option>GET</option><option>POST</option></select></div>
+        <div class="f grow"><label for="rawP">Path</label>
+          <input id="rawP" value="/discord/guilds" spellcheck="false"></div>
+        <button class="btn" id="btnRaw">Send</button>
+      </div>
+      <div class="f" style="margin-top:10px"><label for="rawB">JSON body (POST)</label>
+        <textarea id="rawB" rows="4" spellcheck="false" placeholder='{"enabled": true}'></textarea></div>
+      <div class="res" id="rawRes"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ============ WIRE LOG ============ -->
+<aside class="wire">
+  <div class="wire-hd">
+    <h2>Wire log</h2>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span class="pill idle" id="reqCount"><span class="dot"></span>0 calls</span>
+      <button class="btn ghost sm" id="clearLog">Clear</button>
+    </div>
+  </div>
+  <div class="wire-list" id="wireList"></div>
+</aside>
+
+</div></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const el = (t,c,x) => { const n=document.createElement(t); if(c)n.className=c; if(x!==undefined)n.textContent=x; return n; };
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+
+/* ---------------- API layer ---------------- */
+const baseInput = $("#base");
+baseInput.value = location.protocol.startsWith("http") ? location.origin : "http://localhost:8100";
+const base = () => baseInput.value.replace(/\/+$/,"");
+let callCount = 0;
+
+const KEY_STORAGE = "discord-service-api-key"; // shared with /ui and /explorer
+const apiKey = () => { try { return localStorage.getItem(KEY_STORAGE) || ""; } catch { return ""; } };
+
+async function api(method, path, body){
+  const url = base() + path;
+  const t0 = performance.now();
+  let res, data, netErr = null;
+  const headers = {};
+  if(body !== undefined) headers["Content-Type"] = "application/json";
+  const key = apiKey();
+  if(key) headers["X-API-Key"] = key;
+  try{
+    res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    const text = await res.text();
+    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  }catch(e){
+    netErr = e.message || String(e);
+  }
+  const ms = Math.round(performance.now() - t0);
+  const status = netErr ? 0 : res.status;
+  logCall(method, path, status, ms, netErr ? {
+    network_error: netErr,
+    hint: isSameOrigin()
+      ? "Is the service running, and is the API base URL right?"
+      : "Cross-origin: the browser blocked the response because this page is not served by the API. Open " + ((apiOrigin() || "http://localhost:8100") + "/console") + " instead."
+  } : data);
+  return { ok: !netErr && res.ok, status, data, ms, netErr };
+}
+
+/* ---- origin guard: every fetch fails identically when this page is not served
+   by the API itself (no CORS headers, "Failed to fetch"), which reads exactly
+   like the server being down. Detect it and say so plainly instead. */
+function apiOrigin(){ try { return new URL(base()).origin; } catch { return null; } }
+function isSameOrigin(){ return location.protocol.startsWith("http") && apiOrigin() === location.origin; }
+function checkOrigin(){
+  const box = $("#originWarn");
+  if(isSameOrigin()){ box.hidden = true; return true; }
+  const target = (apiOrigin() || "http://localhost:8100") + "/console";
+  const viaFile = !location.protocol.startsWith("http");
+  box.hidden = false;
+  box.innerHTML =
+    '<h2>This page must be opened from the API itself</h2>'+
+    '<p>' + (viaFile
+      ? 'You opened <code>console.html</code> as a local file, so the browser treats every request to the API as cross-origin and blocks the response.'
+      : 'This page is served from <code>'+esc(location.origin)+'</code> but the API is <code>'+esc(apiOrigin()||base())+'</code>. Different origins, so the browser blocks every response.') +
+    ' Unless <code>CORS_ORIGINS</code> is explicitly configured to allow it, nothing here can work until the page and the API share an origin.</p>'+
+    '<a class="fixlink" href="'+esc(target)+'">Open '+esc(target)+'</a>'+
+    '<details><summary>Why not just enable CORS everywhere?</summary>'+
+    '<p>This API can require an <code>X-API-Key</code> header or a signed-in Discord session cookie. Permissive CORS would let any website you happen to visit drive it using a browser that already holds a valid key or session &mdash; creating access requests, starting monitors, or reading collected message content through your credentials. Serving the console from the app keeps it same-origin without opening that door.</p>'+
+    '<p>Note that <code>localhost</code> and <code>127.0.0.1</code> count as different origins, so use whichever one the address bar shows.</p>'+
+    '</details>';
+  return false;
+}
+
+function errText(r){
+  if(r.netErr){
+    if(!isSameOrigin()) return "Blocked by the browser: this page is not served by the API. Open " + ((apiOrigin() || "http://localhost:8100") + "/console") + " instead.";
+    return "Cannot reach the API at " + base() + " — " + r.netErr;
+  }
+  const d = r.data;
+  if(d && d.code && d.message){
+    let m = d.code + ": " + d.message;
+    const details = d.details || {};
+    if(details.reason) m += " (" + details.reason + ")";
+    if(details.hint) m += " — " + details.hint;
+    if(details.retry_after) m += " (retry after " + details.retry_after + "s)";
+    if(details.login_url) m += " — sign in at " + details.login_url;
+    return m;
+  }
+  return "HTTP " + r.status;
+}
+
+function logCall(method, path, status, ms, data){
+  callCount++;
+  $("#reqCount").innerHTML = '<span class="dot"></span>' + callCount + (callCount===1?" call":" calls");
+  const cls = status===0 ? "err" : (status>=200 && status<300 ? "ok" : "err");
+  const d = el("details","entry "+cls);
+  const s = el("summary");
+  s.innerHTML = '<span class="st-code">'+(status||"ERR")+'</span>'+
+                '<span class="m">'+method+'</span>'+
+                '<span class="u">'+esc(path)+'</span>'+
+                '<span class="ms">'+ms+'ms</span>';
+  d.appendChild(s);
+  d.appendChild(el("pre", null, typeof data === "string" ? data : JSON.stringify(data, null, 2)));
+  const list = $("#wireList");
+  list.prepend(d);
+  while(list.children.length > 60) list.lastChild.remove();
+}
+
+let toastTimer;
+function toast(msg, isErr){
+  document.querySelectorAll(".toast").forEach(t=>t.remove());
+  const t = el("div","toast"+(isErr?" err":""), msg);
+  document.body.appendChild(t);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.remove(), 5200);
+}
+
+/* ---------------- tabs / chrome ---------------- */
+document.querySelectorAll(".tab").forEach(tab=>{
+  tab.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected", t===tab));
+    document.querySelectorAll(".panel").forEach(p=>p.hidden = p.id !== tab.dataset.p);
+  });
+});
+function selectTab(id){ document.querySelector('.tab[data-p="'+id+'"]').click(); }
+
+$("#themeBtn").addEventListener("click", ()=>{
+  const cur = document.documentElement.getAttribute("data-theme");
+  const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+});
+$("#clearLog").addEventListener("click", ()=>{ $("#wireList").innerHTML = ""; });
+
+$("#keyBtn").addEventListener("click", setApiKey);
+$("#btnSetKey").addEventListener("click", setApiKey);
+function setApiKey(){
+  const next = window.prompt("API key sent as X-API-Key on every request. Leave blank to clear.", apiKey());
+  if(next === null) return;
+  try{
+    if(next.trim()) localStorage.setItem(KEY_STORAGE, next.trim());
+    else localStorage.removeItem(KEY_STORAGE);
+  }catch{ toast("This browser blocked local storage.", true); return; }
+  toast(next.trim() ? "API key saved" : "API key cleared");
+  loadStatus();
+}
+$("#btnLogout").addEventListener("click", async ()=>{
+  await api("POST","/auth/logout");
+  toast("Signed out");
+  loadStatus();
+});
+
+/* ---------------- connection ---------------- */
+const field = (k,v) => '<div><span>'+esc(k)+'</span><b>'+esc(v===null||v===undefined||v===""?"—":v)+'</b></div>';
+
+async function loadStatus(){
+  const h = await api("GET","/health");
+  const dh = await api("GET","/discord/health");
+  const me = await api("GET","/auth/me");
+  const p = $("#connPill");
+
+  if(!h.ok || !h.data){ p.className="pill bad"; p.innerHTML='<span class="dot"></span>unreachable'; $("#statusMeta").innerHTML=""; }
+  else{
+    const d = h.data;
+    p.className = "pill " + (d.status==="ok"?"ok":d.status==="degraded"?"wait":"bad");
+    p.innerHTML = '<span class="dot"></span>' + d.status;
+    const dd = dh.ok ? dh.data : {};
+    $("#statusMeta").innerHTML =
+      field("Database", d.database) + field("Discord", d.discord) + field("Auth", d.auth) +
+      field("Bot", dd.bot ? (dd.bot.username||dd.bot.id) : "—") +
+      field("Gateway", dd.gateway ? dd.gateway.status : "—") +
+      field("Worker running", dd.worker ? dd.worker.running : "—") +
+      field("Recheck interval (h)", dd.access_recheck_hours) +
+      field("Guilds", dd.counts ? dd.counts.guilds : "—") +
+      field("Channels", dd.counts ? dd.counts.channels : "—") +
+      field("Messages", dd.counts ? dd.counts.messages : "—") +
+      field("Running monitors", dd.counts ? dd.counts.running_monitors : "—") +
+      field("Pending access requests", dd.counts ? dd.counts.pending_access_requests : "—");
+  }
+
+  if(me.ok && me.data){
+    const m = me.data;
+    $("#loginLink").style.display = (m.oauth_enabled && !m.authenticated) ? "inline-block" : "none";
+    $("#btnLogout").style.display = m.authenticated ? "inline-block" : "none";
+    $("#authMeta").innerHTML =
+      field("API key required", m.api_key_required) +
+      field("Discord login available", m.oauth_enabled) +
+      field("Signed in as", m.authenticated ? (m.user.global_name||m.user.username) : "—") +
+      field("API key set in this browser", apiKey() ? "yes" : "no");
+  }
+}
+$("#btnStatus").addEventListener("click", loadStatus);
+
+/* ---------------- guilds & channels ---------------- */
+let GUILDS = [], selectedGuildId = null, CHANNELS = [], selectedChannel = null;
+
+async function loadGuilds(){
+  const r = await api("GET","/discord/guilds?refresh=true&limit=200");
+  const tb = $("#guildRows");
+  if(!r.ok){ tb.innerHTML = '<tr><td colspan="5" class="empty">'+esc(errText(r))+'</td></tr>'; return; }
+  GUILDS = (r.data && r.data.items) || [];
+  $("#inviteHint").innerHTML = GUILDS.length ? "" :
+    '<div class="hintbox"><b>The bot is not in any server yet.</b> Use the Discovery tab to get an invite link.</div>';
+  tb.innerHTML = GUILDS.length ? GUILDS.map(g=>
+    '<tr data-gid="'+esc(g.guild_id)+'" aria-selected="'+(g.guild_id===selectedGuildId)+'">'+
+      '<td>'+esc(g.name||"(unnamed)")+'</td>'+
+      '<td class="id">'+esc(g.guild_id)+'</td>'+
+      '<td>'+(g.is_available?"yes":"no")+'</td>'+
+      '<td><button class="btn ghost sm" data-mon="'+esc(g.guild_id)+'" data-cur="'+g.monitoring_enabled+'">'+
+        (g.monitoring_enabled?"ON — click to disable":"OFF — click to enable")+'</button></td>'+
+      '<td><button class="btn sm" data-sel="'+esc(g.guild_id)+'">Channels &rarr;</button></td>'+
+    '</tr>').join("") : '<tr><td colspan="5" class="empty">No servers. See the Discovery tab.</td></tr>';
+}
+
+$("#guildRows").addEventListener("click", async e=>{
+  const monBtn = e.target.closest("button[data-mon]");
+  if(monBtn){
+    const gid = monBtn.dataset.mon, enable = monBtn.dataset.cur !== "true";
+    const r = await api("POST","/discord/guilds/"+gid+"/monitoring", {enabled: enable});
+    if(r.ok) toast("Guild monitoring " + (enable?"enabled":"disabled")); else toast(errText(r), true);
+    loadGuilds();
+    return;
+  }
+  const selBtn = e.target.closest("button[data-sel]");
+  if(selBtn){ selectGuild(selBtn.dataset.sel); return; }
+});
+
+function selectGuild(gid){
+  selectedGuildId = gid;
+  document.querySelectorAll("#guildRows tr").forEach(r=>r.setAttribute("aria-selected", r.dataset.gid===gid));
+  const g = GUILDS.find(x=>x.guild_id===gid);
+  $("#channelsCard").hidden = false;
+  $("#channelsGuildLabel").textContent = g ? "— " + (g.name||gid) : "";
+  $("#chanDetailCard").hidden = true;
+  loadChannels();
+}
+$("#btnGuilds").addEventListener("click", loadGuilds);
+
+async function loadChannels(){
+  if(!selectedGuildId) return;
+  const filter = $("#chanFilter").value.trim();
+  let r;
+  if(filter) r = await api("GET","/discord/channels/search?"+new URLSearchParams({query:filter, guild_id:selectedGuildId, limit:200}));
+  else r = await api("GET","/discord/guilds/"+selectedGuildId+"/channels?"+new URLSearchParams({refresh:true, evaluate_access:true, limit:200}));
+  const tb = $("#chanRows");
+  if(!r.ok){ tb.innerHTML = '<tr><td colspan="5" class="empty">'+esc(errText(r))+'</td></tr>'; return; }
+  CHANNELS = (r.data && r.data.items) || [];
+  tb.innerHTML = CHANNELS.length ? CHANNELS.map(c=>
+    '<tr data-cid="'+esc(c.channel_id)+'" aria-selected="'+(selectedChannel&&selectedChannel.channel_id===c.channel_id)+'">'+
+      '<td>#'+esc(c.name||"?")+'</td><td class="id">'+esc(c.channel_id)+'</td>'+
+      '<td class="num">'+c.channel_type+'</td>'+
+      '<td><span class="st '+stClassChannel(c.access_status)+'">'+esc(c.access_status)+'</span></td>'+
+      '<td>'+(c.is_private?"yes":"no")+'</td></tr>').join("")
+    : '<tr><td colspan="5" class="empty">No channels found.</td></tr>';
+}
+$("#btnChannels").addEventListener("click", loadChannels);
+$("#chanFilter").addEventListener("keydown", e=>{ if(e.key==="Enter") loadChannels(); });
+
+$("#chanRows").addEventListener("click", e=>{
+  const tr = e.target.closest("tr[data-cid]");
+  if(!tr) return;
+  document.querySelectorAll("#chanRows tr").forEach(r=>r.setAttribute("aria-selected", r===tr));
+  loadChannelDetail(tr.dataset.cid);
+});
+
+async function loadChannelDetail(channelId){
+  const r = await api("GET","/discord/channels/"+channelId);
+  if(!r.ok){ toast(errText(r), true); return; }
+  selectedChannel = { channel_id: channelId, ...r.data };
+  const a = r.data.access, c = r.data.channel;
+  $("#chanDetailCard").hidden = false;
+  $("#chanDetailSub").innerHTML = 'GET /discord/channels/'+esc(channelId)+' — <code>collection_allowed</code> gates every action below.';
+  $("#chanMeta").innerHTML =
+    field("Name", "#"+(a.channel_name||"?")) + field("Access status", a.access_status) +
+    field("Reason", a.reason) + field("Can view", a.bot_can_view) +
+    field("Can read history", a.bot_can_read_history) + field("Content intent", a.bot_can_read_message_content) +
+    field("Private", a.is_private) + field("Collection allowed", a.collection_allowed) +
+    field("Open access request", r.data.open_access_request_id ?? "none");
+  const detail = a.detail ? '<div class="hintbox">'+esc(a.detail)+'</div>' : "";
+  $("#chanActionRes").innerHTML = detail;
+  $("#viewReqBtn").style.display = r.data.open_access_request_id ? "inline-block" : "none";
+  $("#viewReqBtn").dataset.reqid = r.data.open_access_request_id || "";
+}
+
+$("#chanDetailCard").addEventListener("click", async e=>{
+  const b = e.target.closest("button[data-a]");
+  if(!b || !selectedChannel) return;
+  const id = selectedChannel.channel_id, out = $("#chanActionRes"), a = b.dataset.a;
+  const keywords = $("#actKeywords").value.split(",").map(s=>s.trim()).filter(Boolean);
+  const kwBody = keywords.length ? {keywords} : null;
+  let r;
+
+  if(a === "eval"){ r = await api("GET","/discord/channels/"+id); if(r.ok){ toast("Access: "+r.data.access.access_status); loadChannelDetail(id); } else toast(errText(r), true); return; }
+
+  if(a === "request"){
+    r = await api("POST","/discord/channels/"+id+"/access-request", {
+      collect_history_on_grant: $("#actHistory").checked, monitor_on_grant: $("#actMonitorToo").checked, keywords: kwBody
+    });
+    if(r.ok){ toast(r.data.message); out.innerHTML = renderOutcome(r.data); loadChannelDetail(id); } else toast(errText(r), true);
+    return;
+  }
+  if(a === "scrape" || a === "scrape-inc"){
+    r = await api("POST","/discord/channels/"+id+"/scrape", { limit:100, incremental: a==="scrape-inc", keywords: kwBody });
+    if(r.ok){ toast("Fetched "+r.data.fetched+", stored "+r.data.stored+" new"); out.innerHTML = renderScrape(r.data); }
+    else toast(errText(r), true);
+    return;
+  }
+  if(a === "monstart"){
+    r = await api("POST","/discord/channels/"+id+"/monitor/start", { keywords: kwBody, collect_history: $("#actHistory").checked });
+    if(r.ok){ toast(r.data.message); out.innerHTML = renderMonitorStart(r.data); } else toast(errText(r), true);
+    return;
+  }
+  if(a === "monstop"){
+    r = await api("POST","/discord/channels/"+id+"/monitor/stop", {reason:"stopped from console"});
+    if(r.ok){ toast("Monitor "+r.data.status); } else toast(errText(r), true);
+    return;
+  }
+  if(a === "monstatus"){
+    r = await api("GET","/discord/channels/"+id+"/monitor/status");
+    if(!r.ok) return toast(errText(r), true);
+    const m = r.data.monitor;
+    out.innerHTML = '<div class="meta">'+field("Status", m.status)+field("Gateway active", r.data.gateway_active)+
+      field("Seen", m.messages_seen)+field("Matched", m.messages_matched)+
+      field("Last event", m.last_event_at ? new Date(m.last_event_at).toLocaleString() : "—")+
+      field("Last error", m.last_error)+'</div>';
+    return;
+  }
+  if(a === "messages"){
+    selectTab("p-search"); $("#schan").value = id; $("#btnSearch").click(); return;
+  }
+  if(a === "viewreq"){
+    const rid = b.dataset.reqid; if(!rid) return;
+    selectTab("p-req"); $("#reqStatus").value=""; loadRequests().then(()=>{
+      const row = document.querySelector('#reqRes tr[data-rid="'+rid+'"]');
+      if(row) row.scrollIntoView({block:"center"});
+    });
+    return;
+  }
+});
+
+function stClassChannel(s){
+  return (s==="PUBLIC_ACCESSIBLE"||s==="ACCESSIBLE") ? "good" : s==="PRIVATE" ? "pend" : s==="ERROR" ? "bad" : "";
+}
+function renderOutcome(o){
+  return '<div class="meta">'+field("Channel status", o.channel_status)+field("Request status", o.access_request_status)+
+    field("Created", o.created)+field("Already accessible", o.already_accessible)+
+    field("Next check", o.next_check_at ? new Date(o.next_check_at).toLocaleString() : "—")+'</div>'+
+    (o.scrape ? '<div class="hintbox">Collected '+o.scrape.stored+' new message(s) on grant.</div>' : "");
+}
+function renderScrape(s){
+  return '<div class="meta">'+field("Fetched", s.fetched)+field("Stored", s.stored)+field("Duplicates", s.duplicates)+
+    field("Matched", s.matched)+field("Pages", s.pages)+field("Completed", s.completed)+
+    field("Stopped reason", s.stopped_reason)+'</div>';
+}
+function renderMonitorStart(r){
+  return '<div class="meta">'+field("Status", r.monitor.status)+field("Waiting for access", r.waiting_for_access)+'</div>'+
+    (r.scrape ? '<div class="hintbox">History collected: '+r.scrape.stored+' new message(s).</div>' : "")+
+    (r.access_request ? '<div class="hintbox">Access request #'+r.access_request.id+' is '+r.access_request.status+'.</div>' : "");
+}
+
+/* ---------------- access requests ---------------- */
+async function loadRequests(){
+  const p = new URLSearchParams({limit:100});
+  if($("#reqStatus").value) p.set("status", $("#reqStatus").value);
+  const r = await api("GET","/discord/access-requests?"+p);
+  if(!r.ok) return toast(errText(r), true);
+  const rows = (r.data && r.data.items) || [];
+  let h = '<div class="res-hd"><h3>'+rows.length+' request'+(rows.length===1?"":"s")+'</h3></div>';
+  h += rows.length ? '<div class="tbl-wrap"><table><thead><tr><th>ID</th><th>Channel</th><th>Status</th>'+
+    '<th>Checks</th><th>Next check</th><th></th></tr></thead><tbody>'+
+    rows.map(req=>'<tr data-rid="'+req.id+'"><td class="id">#'+req.id+'</td>'+
+      '<td><div class="trunc">'+esc(req.channel_name||req.channel_id)+'</div></td>'+
+      '<td><span class="st '+stClassReq(req.status)+'">'+esc(req.status)+'</span>'+
+        (req.rejection_reason?'<div style="color:var(--muted);font-size:11px">'+esc(req.rejection_reason)+'</div>':'')+'</td>'+
+      '<td class="num">'+req.check_count+'</td>'+
+      '<td class="num">'+(req.next_check_at?new Date(req.next_check_at).toLocaleString():"—")+'</td>'+
+      '<td>'+(req.status==="PENDING"?
+        '<button class="btn sm" data-rc="'+req.id+'">Re-check now</button> '+
+        '<button class="btn ghost sm" data-cn="'+req.id+'">Cancel</button>' : "—")+'</td></tr>').join("")+
+    '</tbody></table></div>' : '<div class="empty">No access requests.</div>';
+  $("#reqRes").innerHTML = h;
+}
+$("#btnReqLoad").addEventListener("click", loadRequests);
+$("#reqRes").addEventListener("click", async e=>{
+  const rc = e.target.closest("button[data-rc]"), cn = e.target.closest("button[data-cn]");
+  if(rc){ const r = await api("POST","/discord/access-requests/"+rc.dataset.rc+"/recheck");
+    if(r.ok){ toast(r.data.access_request_status+": "+r.data.message, r.data.access_request_status!=="ACCEPTED"); loadRequests(); }
+    else toast(errText(r), true); return; }
+  if(cn){ const r = await api("POST","/discord/access-requests/"+cn.dataset.cn+"/cancel");
+    if(r.ok){ toast("Cancelled"); loadRequests(); } else toast(errText(r), true); return; }
+});
+function stClassReq(s){
+  return s==="ACCEPTED" ? "good" : ["PENDING","PRIVATE"].includes(s) ? "pend" : ["DENIED","EXPIRED","ERROR"].includes(s) ? "bad" : "";
+}
+
+/* ---------------- monitors ---------------- */
+async function loadMonitors(){
+  const p = new URLSearchParams({limit:100});
+  if($("#monStatus").value) p.set("status", $("#monStatus").value);
+  const r = await api("GET","/discord/monitors?"+p);
+  if(!r.ok) return toast(errText(r), true);
+  const rows = (r.data && r.data.items) || [];
+  let h = '<div class="res-hd"><h3>'+rows.length+' monitor'+(rows.length===1?"":"s")+'</h3></div>';
+  h += rows.length ? '<div class="tbl-wrap"><table><thead><tr><th>Channel</th><th>Status</th>'+
+    '<th>Seen</th><th>Matched</th><th>Last event</th></tr></thead><tbody>'+
+    rows.map(m=>'<tr><td class="id">'+esc(m.channel_id)+'</td>'+
+      '<td><span class="st '+stClassMon(m.status)+'">'+esc(m.status)+'</span></td>'+
+      '<td class="num">'+m.messages_seen+'</td><td class="num">'+m.messages_matched+'</td>'+
+      '<td class="num">'+(m.last_event_at?new Date(m.last_event_at).toLocaleString():"—")+'</td></tr>').join("")+
+    '</tbody></table></div>' : '<div class="empty">No monitors.</div>';
+  $("#monRes").innerHTML = h;
+}
+$("#btnMonLoad").addEventListener("click", loadMonitors);
+function stClassMon(s){
+  return s==="RUNNING" ? "live" : ["WAITING_FOR_ACCESS","STARTING","PAUSED"].includes(s) ? "pend" : s==="ERROR" ? "bad" : "";
+}
+
+/* ---------------- search ---------------- */
+$("#btnSearch").addEventListener("click", async ()=>{
+  const keywords = $("#sq").value.split(",").map(s=>s.trim()).filter(Boolean);
+  const body = {
+    keywords, match_mode: $("#smode").value, match_all: $("#sall").value==="true",
+    limit: Number($("#slimit").value)||50,
+  };
+  if($("#schan").value.trim()) body.channel_id = $("#schan").value.trim();
+  if($("#sguild").value.trim()) body.guild_id = $("#sguild").value.trim();
+  if($("#sauthor").value.trim()) body.author_id = $("#sauthor").value.trim();
+  const r = await api("POST","/discord/search", body);
+  if(!r.ok) return toast(errText(r), true);
+  const rows = (r.data && r.data.items) || [];
+  let h = '<div class="res-hd"><h3>'+r.data.pagination.total+' match'+(r.data.pagination.total===1?"":"es")+'</h3></div>';
+  if(!rows.length) h += '<div class="empty">Nothing matched.</div>';
+  rows.forEach(hit=>{
+    const m = hit.message;
+    h += '<div class="msg"><div class="msg-hd">'+
+      '<span class="who">'+esc(m.author_name||"?")+'</span>'+(m.author_is_bot?'<span class="tagx">bot</span>':'')+
+      '<span>'+new Date(m.timestamp).toLocaleString()+'</span></div>'+
+      '<div class="msg-body">'+esc(m.content||"(no content)")+'</div><div class="msg-ft">'+
+      hit.matched_keywords.map(k=>'<span class="tagx match">'+esc(k)+'</span>').join("")+
+      (m.message_url?'<a href="'+esc(m.message_url)+'" target="_blank" rel="noopener">open in Discord</a>':'')+
+      '</div></div>';
+  });
+  $("#searchRes").innerHTML = h;
+});
+
+/* ---------------- discovery ---------------- */
+$("#btnGuildSearch").addEventListener("click", async ()=>{
+  const q = $("#gsq").value.trim();
+  if(!q) return toast("Enter a name", true);
+  const r = await api("GET","/discord/guilds/search?"+new URLSearchParams({query:q, limit:50}));
+  if(!r.ok) return toast(errText(r), true);
+  const rows = (r.data && r.data.items) || [];
+  $("#guildSearchRes").innerHTML = rows.length ?
+    '<div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Guild ID</th><th></th></tr></thead><tbody>'+
+    rows.map(g=>'<tr><td>'+esc(g.name||"?")+'</td><td class="id">'+esc(g.guild_id)+'</td>'+
+      '<td><button class="btn ghost sm" data-usg="'+esc(g.guild_id)+'">Use</button></td></tr>').join("")+
+    '</tbody></table></div>' : '<div class="empty">No match.</div>';
+});
+document.addEventListener("click", e=>{
+  const b = e.target.closest("button[data-usg]");
+  if(!b) return;
+  selectTab("p-src"); selectGuild(b.dataset.usg);
+});
+
+$("#btnChanSearch2").addEventListener("click", async ()=>{
+  const q = $("#csq").value.trim();
+  if(!q) return toast("Enter a name", true);
+  const p = new URLSearchParams({query:q, limit:50});
+  if($("#csgid").value.trim()) p.set("guild_id", $("#csgid").value.trim());
+  if($("#csrefresh").checked) p.set("refresh", "true");
+  const r = await api("GET","/discord/channels/search?"+p);
+  if(!r.ok) return toast(errText(r), true);
+  const rows = (r.data && r.data.items) || [];
+  $("#chanSearchRes").innerHTML = rows.length ?
+    '<div class="tbl-wrap"><table><thead><tr><th>Channel</th><th>Channel ID</th><th>Access</th></tr></thead><tbody>'+
+    rows.map(c=>'<tr><td>#'+esc(c.name||"?")+'</td><td class="id">'+esc(c.channel_id)+'</td>'+
+      '<td><span class="st '+stClassChannel(c.access_status)+'">'+esc(c.access_status)+'</span></td></tr>').join("")+
+    '</tbody></table></div>' : '<div class="empty">No match. Discover the guild\'s channels first, or tick refresh.</div>';
+});
+
+async function refreshInviteLink(){
+  const r = await api("GET","/discord/bot");
+  if(!r.ok) return;
+  const url = "https://discord.com/oauth2/authorize?client_id="+encodeURIComponent(r.data.application_id||r.data.id)+"&scope=bot&permissions=66560";
+  $("#inviteLink").href = url;
+  $("#btnCopyInvite").onclick = async ()=>{
+    try{ await navigator.clipboard.writeText(url); toast("Invite link copied"); }
+    catch{ toast(url); }
+  };
+}
+
+/* ---------------- notifications ---------------- */
+$("#btnNotif").addEventListener("click", async ()=>{
+  const p = new URLSearchParams({limit:50});
+  if($("#notifType").value) p.set("event_type", $("#notifType").value);
+  if($("#unreadOnly").checked) p.set("unread","true");
+  const r = await api("GET","/discord/notifications?"+p);
+  if(!r.ok) return toast(errText(r), true);
+  const rows = (r.data && r.data.items) || [];
+  let h = '<div class="res-hd"><h3>'+rows.length+' notification'+(rows.length===1?"":"s")+'</h3></div>';
+  h += rows.length ? '<div class="tbl-wrap"><table><thead><tr><th>ID</th><th>Event</th><th>Channel</th>'+
+    '<th>Message</th><th>Created</th><th></th></tr></thead><tbody>'+
+    rows.map(n=>'<tr><td class="id">'+n.id+'</td><td>'+esc(n.event_type)+'</td>'+
+      '<td class="id">'+esc(n.channel_id||"—")+'</td>'+
+      '<td><div class="trunc">'+esc(n.message)+'</div></td>'+
+      '<td class="num">'+new Date(n.created_at).toLocaleString()+'</td>'+
+      '<td>'+(n.read_at?"read":'<button class="btn ghost sm" data-read="'+n.id+'">Mark read</button>')+'</td></tr>').join("")+
+    '</tbody></table></div>' : '<div class="empty">No notifications yet.</div>';
+  $("#notifRes").innerHTML = h;
+});
+$("#notifRes").addEventListener("click", async e=>{
+  const b = e.target.closest("button[data-read]");
+  if(!b) return;
+  const r = await api("POST","/discord/notifications/"+b.dataset.read+"/read");
+  if(r.ok){ toast("Marked read"); $("#btnNotif").click(); } else toast(errText(r), true);
+});
+
+/* ---------------- raw ---------------- */
+$("#btnRaw").addEventListener("click", async ()=>{
+  const m = $("#rawM").value, path = $("#rawP").value.trim();
+  if(!path.startsWith("/")) return toast("Path must start with /", true);
+  let body;
+  const raw = $("#rawB").value.trim();
+  if(raw && m==="POST"){
+    try{ body = JSON.parse(raw); }catch(err){ return toast("Body is not valid JSON: "+err.message, true); }
+  }
+  const r = await api(m, path, body);
+  $("#rawRes").innerHTML = '<div class="res-hd"><h3>HTTP '+r.status+'</h3><span class="tagx">'+r.ms+'ms</span></div>'+
+    '<pre style="background:var(--surface-2);border:1px solid var(--line);border-radius:3px;padding:10px;'+
+    'font-size:11.5px;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-word">'+
+    esc(JSON.stringify(r.data, null, 2))+'</pre>';
+});
+
+/* ---------------- boot ---------------- */
+function refresh(){
+  if(!checkOrigin()){
+    $("#connPill").className = "pill bad";
+    $("#connPill").innerHTML = '<span class="dot"></span>wrong origin';
+    return;
+  }
+  loadStatus();
+  loadGuilds();
+  refreshInviteLink();
+}
+$("#refreshAll").addEventListener("click", refresh);
+baseInput.addEventListener("change", refresh);
+refresh();
+setInterval(()=>{ if(isSameOrigin()) loadStatus(); }, 30000);
+</script>
+</body>
+</html>
