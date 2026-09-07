@@ -76,5 +76,28 @@ class GuildService:
         )
         return rows, total
 
+    async def find_stored_guild(self, guild_id: str) -> DiscordGuild | None:
+        """Look up a guild from SQLite only. Never calls Discord."""
+
+        return await self._repo.get_by_guild_id(str(guild_id))
+
+    async def set_monitoring_enabled(
+        self, guild_id: str, *, enabled: bool
+    ) -> DiscordGuild:
+        """Flip the guild-level monitoring master switch.
+
+        Raises when the guild has never been discovered -- toggling monitoring for a
+        guild this service does not know about would silently do nothing useful.
+        """
+
+        guild = await self._repo.set_monitoring_enabled(str(guild_id), enabled=enabled)
+        if guild is None:
+            raise NotFoundError(
+                "Guild is not known to this service. Discover it first with "
+                "GET /discord/guilds?refresh=true.",
+                details={"guild_id": guild_id},
+            )
+        return guild
+
     async def count(self) -> int:
         return await self._repo.count()

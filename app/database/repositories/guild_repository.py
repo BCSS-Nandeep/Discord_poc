@@ -48,6 +48,19 @@ class GuildRepository(BaseRepository):
         await self.session.flush()
         return guild
 
+    async def set_monitoring_enabled(
+        self, guild_id: str, *, enabled: bool
+    ) -> DiscordGuild | None:
+        """Flip the guild-level monitoring master switch. ``None`` if unknown locally."""
+
+        guild = await self.get_by_guild_id(guild_id)
+        if guild is None:
+            return None
+        guild.monitoring_enabled = enabled
+        guild.updated_at = utcnow()
+        await self.session.flush()
+        return guild
+
     async def search_by_name(
         self, query: str, *, limit: int = 50, offset: int = 0
     ) -> tuple[Sequence[DiscordGuild], int]:

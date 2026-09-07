@@ -44,9 +44,10 @@ from app.core.enums import (
 )
 from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
-from app.database.models import DiscordAccessRequest, DiscordMonitor, utcnow
+from app.database.models import DiscordAccessRequest, DiscordGuild, DiscordMonitor, utcnow
 from app.database.repositories.access_request_repository import AccessRequestRepository
 from app.discord.channel_service import ChannelService
+from app.discord.guild_service import GuildService
 from app.discord.keywords import KeywordConfig
 from app.discord.message_service import MessageService, ScrapeResult
 from app.discord.monitor_service import MonitorService
@@ -401,6 +402,7 @@ class AccessWorkflowService:
         *,
         settings: Settings,
         channel_service: ChannelService,
+        guild_service: GuildService,
         access_request_service: AccessRequestService,
         message_service: MessageService,
         monitor_service: MonitorService,
@@ -408,6 +410,7 @@ class AccessWorkflowService:
     ) -> None:
         self._settings = settings
         self._channels = channel_service
+        self._guilds = guild_service
         self._requests = access_request_service
         self._messages = message_service
         self._monitors = monitor_service
@@ -445,6 +448,73 @@ class AccessWorkflowService:
                     ),
                 },
             )
+
+    async def _reject_if_guild_monitoring_disabled(self, guild_id: str | None) -> None:
+        """Refuse to start a monitor while the guild's master switch is off."""
+
+        if guild_id is None:
+            return
+        from app.core.exceptions import GuildMonitoringDisabledError
+
+        guild = await self._guilds.find_stored_guild(guild_id)
+        if guild is not None and not guild.monitoring_enabled:
+            raise GuildMonitoringDisabledError(
+                "Monitoring is disabled for this server",
+                details={
+                    "guild_id": guild_id,
+                    "hint": (
+                        "POST /discord/guilds/{guild_id}/monitoring with "
+                        '{"enabled": true} to re-enable it.'
+                    ),
+                },
+            )
+
+    async def set_guild_monitoring(
+        self, guild_id: str, *, enabled: bool
+    ) -> DiscordGuild:
+        """The guild-level monitoring master switch.
+
+        Disabling stops every currently RUNNING monitor in the guild -- a real state
+        change worth recording, not a silent no-op. Enabling only lifts the block on
+        *new* monitors starting; it does not resume ones that were stopped, since
+        resuming collection is a decision the caller should make explicitly via
+        ``start_monitor``.
+        """
+
+        guild = await self._guilds.set_monitoring_enabled(guild_id, enabled=enabled)
+
+        stopped_channels: list[str] = []
+        if not enabled:
+            running = await self._monitors.list_monitors(
+                status=MonitorStatus.RUNNING, guild_id=guild_id, limit=500
+            )
+            for monitor in running:
+                await self._monitors.stop(
+                    monitor, reason="Guild monitoring was disabled."
+                )
+                stopped_channels.append(monitor.channel_id)
+
+        await self._notifications.emit(
+            NotificationEvent.GUILD_MONITORING_ENABLED
+            if enabled
+            else NotificationEvent.GUILD_MONITORING_DISABLED,
+            (
+                f"Monitoring {'enabled' if enabled else 'disabled'} for guild "
+                f"{guild.name or guild_id}."
+                + (f" Stopped {len(stopped_channels)} monitor(s)." if stopped_channels else "")
+            ),
+            guild_id=guild_id,
+            payload={"stopped_channels": stopped_channels} if stopped_channels else None,
+        )
+        logger.info(
+            "Guild monitoring toggled",
+            extra={
+                "guild_id": guild_id,
+                "enabled": enabled,
+                "monitors_stopped": len(stopped_channels),
+            },
+        )
+        return guild
 
     @classmethod
     def _lock_for(cls, channel_id: str) -> asyncio.Lock:
@@ -764,6 +834,9 @@ class AccessWorkflowService:
             self._reject_if_never_collectable(evaluation, cid)
             if evaluation.transient:
                 raise _transient_error(evaluation)
+            await self._reject_if_guild_monitoring_disabled(
+                evaluation.guild_id or channel.guild_id
+            )
 
             monitor = await self._monitors.ensure_monitor(
                 channel_id=cid,

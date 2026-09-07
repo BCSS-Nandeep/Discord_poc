@@ -76,6 +76,13 @@ class InvalidStateTransitionError(ConflictError):
     http_status = 409
 
 
+class GuildMonitoringDisabledError(ConflictError):
+    """A guild's monitoring master switch is off; refuses to start new monitors."""
+
+    code = "GUILD_MONITORING_DISABLED"
+    http_status = 409
+
+
 class AccessNotGrantedError(DiscordServiceError):
     """An operation needs channel access the bot does not have yet."""
 

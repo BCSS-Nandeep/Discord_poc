@@ -145,7 +145,7 @@ discord_service/
 │   │   └── index.html              the browser console served at /ui
 │   └── workers/
 │       └── access_reconciler.py    the 12-hour reconciliation worker
-├── tests/                          324 tests, no network access required
+├── tests/                          343 tests, no network access required
 ├── INTEGRATION.md                  guide for consuming applications
 ├── .env.example
 ├── pyproject.toml
@@ -724,6 +724,7 @@ curl -X POST "$BASE/discord/notifications/42/read"
 | POST | `/discord/search` | Search stored messages. |
 | POST | `/discord/channels/{channel_id}/monitor/start` | Start monitoring. |
 | POST | `/discord/channels/{channel_id}/monitor/stop` | Stop monitoring. |
+| POST | `/discord/guilds/{guild_id}/monitoring` | Guild-level monitoring master switch. |
 | GET | `/discord/channels/{channel_id}/monitor/status` | Monitor status. |
 | GET | `/discord/monitors` | List monitors. |
 | GET | `/discord/notifications` | List notifications. |

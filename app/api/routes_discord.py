@@ -39,7 +39,7 @@ from app.schemas.channel import (
     ChannelResponse,
 )
 from app.schemas.common import ErrorResponse, Page, Pagination
-from app.schemas.guild import GuildResponse
+from app.schemas.guild import GuildMonitoringToggleRequest, GuildResponse
 from app.schemas.health import BotResponse, DiscordHealthResponse
 from app.schemas.message import (
     KeywordFilter,
@@ -368,6 +368,35 @@ async def list_guild_channels(
             len(channels), pagination.limit, pagination.offset, len(channels)
         ),
     )
+
+
+@router.post(
+    "/guilds/{guild_id}/monitoring",
+    response_model=GuildResponse,
+    responses=COMMON_ERRORS,
+    summary="Enable or disable monitoring for a guild",
+    description=(
+        "A guild-level master switch, independent of per-channel access. Disabling it "
+        "immediately **stops every RUNNING monitor in the guild** and refuses to start "
+        "new ones there until re-enabled. Re-enabling only lifts the block -- it does "
+        "not restart monitors that were stopped; start those explicitly via "
+        "`POST /discord/channels/{channel_id}/monitor/start`. "
+        "The guild must already be known to this service "
+        "(`GET /discord/guilds?refresh=true` first)."
+    ),
+)
+async def set_guild_monitoring(
+    guild_id: GuildIdPath,
+    services: ServicesDep,
+    clients: ClientsDep,
+    payload: Annotated[GuildMonitoringToggleRequest, Body()],
+) -> GuildResponse:
+    """Flip the guild-level monitoring master switch."""
+
+    guild = await services.workflow.set_guild_monitoring(guild_id, enabled=payload.enabled)
+    await services.session.commit()
+    await clients.refresh_monitored_channels()
+    return GuildResponse.model_validate(guild)
 
 
 # ========================================================================= channels ==

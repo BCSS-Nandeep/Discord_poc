@@ -87,15 +87,54 @@ class Database:
         """Create every table and index if it does not exist yet.
 
         This standalone service owns its own SQLite file, so ``create_all`` is a safe
-        and sufficient substitute for a migration tool.
+        and sufficient substitute for a migration tool for *new* tables and indexes.
+        It does **not** add columns to a table that already exists, so a field added
+        to an existing model needs the explicit, idempotent step below.
         """
 
         engine = self.connect()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(self._add_missing_columns)
         logger.info(
             "Database schema ready", extra={"tables": len(Base.metadata.tables)}
         )
+
+    @staticmethod
+    def _add_missing_columns(sync_conn) -> None:
+        """Add columns that a newer model version introduced on an existing table.
+
+        Runs ``ALTER TABLE ... ADD COLUMN`` only for columns SQLite reports missing,
+        so it is a no-op on a fresh database and safe to run on every startup against
+        an existing one. Each entry gives a literal SQL default so existing rows keep
+        today's behaviour rather than landing on NULL.
+        """
+
+        from sqlalchemy import inspect, text
+
+        # (table, column, DDL type + default) -- append here when a model gains a
+        # column on a table that may already exist in a deployed database.
+        additions = [
+            (
+                "discord_guilds",
+                "monitoring_enabled",
+                "BOOLEAN NOT NULL DEFAULT 1",
+            ),
+        ]
+
+        inspector = inspect(sync_conn)
+        existing_tables = set(inspector.get_table_names())
+        for table, column, ddl in additions:
+            if table not in existing_tables:
+                continue  # create_all just made it with the column already present
+            columns = {c["name"] for c in inspector.get_columns(table)}
+            if column in columns:
+                continue
+            sync_conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+            logger.info(
+                "Added column to existing table",
+                extra={"table": table, "column": column},
+            )
 
     async def healthcheck(self) -> bool:
         """Return ``True`` when a trivial query succeeds."""

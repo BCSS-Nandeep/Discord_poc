@@ -95,6 +95,10 @@ class DiscordGuild(TimestampMixin, Base):
     icon_url: Mapped[str | None] = mapped_column(String(500))
     owner_id: Mapped[str | None] = mapped_column(String(32))
     is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Master switch: when False, monitors in this guild are stopped and new ones
+    # refuse to start. Independent of per-channel access -- this is an operator
+    # policy toggle, not a permission signal from Discord.
+    monitoring_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (Index("ix_discord_guilds_is_available", "is_available"),)
 

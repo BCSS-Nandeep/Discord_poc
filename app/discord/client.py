@@ -103,6 +103,7 @@ class DiscordClientManager:
         workflow = AccessWorkflowService(
             settings=self._settings,
             channel_service=channels,
+            guild_service=guilds,
             access_request_service=access_requests,
             message_service=messages,
             monitor_service=monitors,
