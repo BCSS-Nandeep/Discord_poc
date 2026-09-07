@@ -101,11 +101,13 @@ discord_service/
 │   ├── api/
 │   │   ├── deps.py                 DI: settings, database, service graph, pagination
 │   │   ├── routes_discord.py       all /discord/* endpoints
+│   │   ├── routes_auth.py          Discord OAuth2 login
 │   │   ├── routes_health.py        GET /health
 │   │   └── routes_ui.py            serves the browser console
 │   ├── core/
 │   │   ├── config.py               pydantic-settings configuration
-│   │   ├── security.py             X-API-Key authentication
+│   │   ├── security.py             X-API-Key / session authentication
+│   │   ├── sessions.py             signed session cookies (stdlib hmac)
 │   │   ├── enums.py                status enums + validated state machines
 │   │   ├── exceptions.py           typed exception hierarchy
 │   │   ├── logging.py              structured logging + secret redaction
@@ -122,6 +124,7 @@ discord_service/
 │   │   ├── monitor_service.py
 │   │   ├── notification_service.py
 │   │   ├── search_service.py
+│   │   ├── oauth_service.py        Discord login flow
 │   │   ├── keywords.py             keyword config + matcher
 │   │   └── normalize.py            Discord payload → internal schema
 │   ├── database/
@@ -142,7 +145,7 @@ discord_service/
 │   │   └── index.html              the browser console served at /ui
 │   └── workers/
 │       └── access_reconciler.py    the 12-hour reconciliation worker
-├── tests/                          286 tests, no network access required
+├── tests/                          324 tests, no network access required
 ├── INTEGRATION.md                  guide for consuming applications
 ├── .env.example
 ├── pyproject.toml
@@ -234,6 +237,34 @@ If `API_KEYS` is empty the API is **open**. That is the local-development defaul
 service logs a warning at startup and `/health` reports `"auth": "disabled"`. Do not
 deploy that way.
 
+### Discord login (optional)
+
+People using the console can sign in with their Discord account instead of pasting an
+API key. Both work at once: humans get a session cookie, server-to-server callers keep
+using `X-API-Key`.
+
+```bash
+DISCORD_CLIENT_SECRET=          # Developer Portal -> OAuth2 -> Reset Secret
+DISCORD_OAUTH_REDIRECT_URI=http://localhost:8100/auth/discord/callback
+SESSION_SECRET=                 # python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Register the redirect URI under **OAuth2 -> General -> Redirects**; Discord requires a
+byte-for-byte match.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /auth/discord/login` | Redirect to Discord's consent screen |
+| `GET /auth/discord/callback` | Verify `state`, exchange the code, start a session |
+| `GET /auth/me` | Current session (always 200) |
+| `POST /auth/logout` | Clear the session |
+
+Scope is `identify` only. **No OAuth2 scope grants a third-party app access to message
+history** — collection stays on the bot token, so login adds identity, not reach. The
+access token is used once to read the profile, then revoked and discarded; only the
+Discord user id and display name are stored, and the session cookie is signed but not
+encrypted, so it never carries a token.
+
 **Integrating from another application?** See **[INTEGRATION.md](INTEGRATION.md)** for
 error codes, retry rules, the private-channel polling pattern, and ready-made Python and
 TypeScript clients.
@@ -277,6 +308,12 @@ Copy `.env.example` to `.env` and fill it in. **Never commit `.env`** (it is in
 | `HOST` / `PORT` | `0.0.0.0` / `8100` | Bind address. |
 | `CORS_ORIGINS` | *(empty)* | Comma-separated origins. Empty disables CORS. |
 | `API_KEYS` | *(empty)* | Comma-separated keys for `X-API-Key`. Empty disables auth. |
+| `DISCORD_CLIENT_SECRET` | *(empty)* | OAuth2 secret. Enables Discord login. |
+| `DISCORD_OAUTH_REDIRECT_URI` | `http://localhost:8100/auth/discord/callback` | Must match the portal exactly. |
+| `DISCORD_OAUTH_SCOPES` | `identify` | Space-separated OAuth2 scopes. |
+| `SESSION_SECRET` | *(empty)* | Signs session cookies. Required for login. |
+| `SESSION_TTL_HOURS` | `12` | Session lifetime. |
+| `SESSION_COOKIE_SECURE` | `false` | Send cookies over HTTPS only. |
 
 ---
 

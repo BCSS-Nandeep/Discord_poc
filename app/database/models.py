@@ -275,6 +275,34 @@ class DiscordMonitor(TimestampMixin, Base):
         return f"<DiscordMonitor channel_id={self.channel_id} status={self.status}>"
 
 
+class DiscordUser(TimestampMixin, Base):
+    """A person who has logged in with Discord.
+
+    Only identity is stored. The OAuth2 access token is deliberately **not** persisted:
+    the ``identify`` scope is used once at login to learn who the user is, after which
+    the signed session cookie carries the login. Nothing later needs the token, so
+    keeping it would be storing a credential for no purpose.
+    """
+
+    __tablename__ = "discord_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    discord_user_id: Mapped[str] = mapped_column(
+        String(32), nullable=False, unique=True, index=True
+    )
+    username: Mapped[str | None] = mapped_column(String(200))
+    global_name: Mapped[str | None] = mapped_column(String(200))
+    avatar_url: Mapped[str | None] = mapped_column(String(500))
+    last_login_at: Mapped[datetime | None] = mapped_column(UtcDateTime, index=True)
+    login_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (Index("ix_discord_users_active", "is_active"),)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<DiscordUser discord_user_id={self.discord_user_id}>"
+
+
 class DiscordNotification(Base):
     """An application-level status event. Never a Discord DM."""
 

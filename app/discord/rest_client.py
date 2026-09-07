@@ -444,6 +444,70 @@ class DiscordRestClient:
             "GET", f"/channels/{quote(cid)}", route_key="GET:/channels/{channel_id}"
         )
 
+    # --------------------------------------------------------------- oauth2 login --
+    # These two calls do NOT use the bot token: the token exchange authenticates with
+    # the application's client credentials, and the profile lookup uses the user's
+    # bearer token. They live here anyway so every Discord HTTP call stays in one
+    # place, with one timeout policy and one error translation.
+    async def exchange_oauth_code(
+        self, *, code: str, redirect_uri: str, client_id: str, client_secret: str
+    ) -> dict[str, Any]:
+        """``POST /oauth2/token`` -- swap an authorization code for tokens."""
+
+        if self._client is None:
+            await self.start()
+        assert self._client is not None
+
+        response = await self._client.post(
+            "/oauth2/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+            },
+            auth=(client_id, client_secret),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if response.status_code >= 400:
+            # Never surface the body: it echoes the code and can name the secret.
+            logger.warning(
+                "OAuth2 token exchange rejected",
+                extra={"status": response.status_code},
+            )
+            raise self._translate_client_error(response, "/oauth2/token")
+        return self._decode(response)
+
+    async def get_oauth_user(self, access_token: str) -> dict[str, Any]:
+        """``GET /users/@me`` using a user's bearer token, not the bot token."""
+
+        if self._client is None:
+            await self.start()
+        assert self._client is not None
+
+        response = await self._client.get(
+            "/users/@me", headers={"Authorization": f"Bearer {access_token}"}
+        )
+        if response.status_code >= 400:
+            raise self._translate_client_error(response, "/users/@me")
+        return self._decode(response)
+
+    async def revoke_oauth_token(
+        self, *, token: str, client_id: str, client_secret: str
+    ) -> None:
+        """``POST /oauth2/token/revoke`` -- best effort; logout must never fail."""
+
+        if self._client is None:
+            await self.start()
+        assert self._client is not None
+        try:
+            await self._client.post(
+                "/oauth2/token/revoke",
+                data={"token": token, "token_type_hint": "access_token"},
+                auth=(client_id, client_secret),
+            )
+        except httpx.HTTPError as exc:
+            logger.info("Token revocation failed", extra={"error": type(exc).__name__})
+
     async def get_channel_messages(
         self,
         channel_id: str,

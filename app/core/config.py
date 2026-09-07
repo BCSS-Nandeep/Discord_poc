@@ -44,6 +44,43 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ---------------------------------------------------------- discord oauth2 login --
+    discord_client_secret: SecretStr = Field(
+        default=SecretStr(""),
+        description=(
+            "OAuth2 client secret from the Developer Portal. Required only for "
+            "'Log in with Discord'; message collection never uses it."
+        ),
+    )
+    discord_oauth_redirect_uri: str = Field(
+        default="http://localhost:8100/auth/discord/callback",
+        description=(
+            "Callback URL. Must match a redirect registered in the Developer Portal "
+            "byte for byte, including scheme and port."
+        ),
+    )
+    discord_oauth_scopes: str = Field(
+        default="identify",
+        description=(
+            "Space-separated OAuth2 scopes. 'identify' is enough to log a user in; "
+            "no scope grants message access, which stays on the bot token."
+        ),
+    )
+    session_secret: SecretStr = Field(
+        default=SecretStr(""),
+        description=(
+            "Secret used to sign session cookies. Generate with "
+            "`python -c \"import secrets; print(secrets.token_urlsafe(48))\"`."
+        ),
+    )
+    session_ttl_hours: int = Field(
+        default=12, ge=1, le=720, description="How long a login session stays valid."
+    )
+    session_cookie_secure: bool = Field(
+        default=False,
+        description="Send session cookies only over HTTPS. Enable in production.",
+    )
+
     # --------------------------------------------------------------------- discord --
     discord_application_id: str = Field(default="", description="Discord application id.")
     discord_bot_token: SecretStr = Field(
@@ -191,6 +228,37 @@ class Settings(BaseSettings):
         return bool(self.bot_token)
 
     @property
+    def client_secret(self) -> str:
+        """OAuth2 client secret. Only used in the token exchange."""
+
+        value = self.discord_client_secret
+        if isinstance(value, SecretStr):
+            return value.get_secret_value().strip()
+        return str(value or "").strip()
+
+    @property
+    def session_signing_key(self) -> str:
+        value = self.session_secret
+        if isinstance(value, SecretStr):
+            return value.get_secret_value().strip()
+        return str(value or "").strip()
+
+    @property
+    def oauth_enabled(self) -> bool:
+        """Discord login is available only when every part of it is configured."""
+
+        return bool(
+            self.discord_application_id
+            and self.client_secret
+            and self.session_signing_key
+            and self.discord_oauth_redirect_uri
+        )
+
+    @property
+    def oauth_scope_list(self) -> list[str]:
+        return [s for s in self.discord_oauth_scopes.split() if s]
+
+    @property
     def api_key_list(self) -> list[str]:
         """Configured API keys. Empty means authentication is disabled."""
 
@@ -232,6 +300,7 @@ class Settings(BaseSettings):
             "gateway_enabled": self.enable_gateway,
             "background_workers_enabled": self.enable_background_workers,
             "auth_enabled": self.auth_enabled,
+            "oauth_login_enabled": self.oauth_enabled,
         }
 
 

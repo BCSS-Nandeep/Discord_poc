@@ -28,6 +28,8 @@ from fastapi.security import APIKeyHeader
 from app.core.config import Settings, get_settings
 from app.core.exceptions import DiscordServiceError
 from app.core.logging import get_logger, register_secret
+from app.core.sessions import SESSION_COOKIE
+from app.core.sessions import verify as verify_session
 
 logger = get_logger(__name__)
 
@@ -76,19 +78,42 @@ def _matches_any(candidate: str, allowed: list[str]) -> bool:
 
 
 async def require_api_key(request: Request) -> None:
-    """FastAPI dependency enforcing the API key when one is configured."""
+    """Authenticate the caller by session cookie **or** API key.
+
+    Two audiences, one gate: a person using the console signs in with Discord and gets
+    a session cookie, while another application integrates server-to-server with a
+    shared key. Either is sufficient; neither is required when both are unconfigured.
+    """
 
     settings: Settings = getattr(request.app.state, "settings", None) or get_settings()
     allowed = settings.api_key_list
 
+    # A valid signed session is proof of a completed Discord login.
+    if settings.oauth_enabled and verify_session(
+        request.cookies.get(SESSION_COOKIE), settings.session_signing_key
+    ):
+        return
+
     if not allowed:
-        return  # authentication disabled; startup already warned about it
+        if settings.oauth_enabled:
+            raise UnauthorizedError(
+                "Sign in with Discord, or send an X-API-Key header",
+                details={"login_url": "/auth/discord/login"},
+            )
+        return  # nothing configured: open, and startup warned about it
 
     presented = request.headers.get(API_KEY_HEADER, "")
     if not presented:
         raise UnauthorizedError(
             f"Missing {API_KEY_HEADER} header",
-            details={"header": API_KEY_HEADER},
+            details={
+                "header": API_KEY_HEADER,
+                **(
+                    {"login_url": "/auth/discord/login"}
+                    if settings.oauth_enabled
+                    else {}
+                ),
+            },
         )
     if not _matches_any(presented, allowed):
         # Log the caller, never the key that was tried.

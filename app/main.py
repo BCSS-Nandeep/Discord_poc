@@ -30,6 +30,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.routes_auth import router as auth_router
 from app.api.routes_discord import router as discord_router
 from app.api.routes_health import SERVICE_VERSION
 from app.api.routes_health import router as health_router
@@ -222,6 +223,7 @@ def create_app(
         openapi_tags=[
             {"name": "health", "description": "Service liveness and dependency checks."},
             {"name": "console", "description": "The browser console served at /ui."},
+            {"name": "auth", "description": "Discord OAuth2 login for humans."},
             {
                 "name": "discord",
                 "description": (
@@ -254,6 +256,7 @@ def create_app(
             "CORS enabled", extra={"origins": len(settings.cors_origin_list)}
         )
 
+    app.include_router(auth_router)
     app.include_router(health_router)
     app.include_router(discord_router)
     app.include_router(ui_router)

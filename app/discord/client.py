@@ -23,6 +23,7 @@ from app.database.repositories.guild_repository import GuildRepository
 from app.database.repositories.message_repository import MessageRepository
 from app.database.repositories.monitor_repository import MonitorRepository
 from app.database.repositories.notification_repository import NotificationRepository
+from app.database.repositories.user_repository import UserRepository
 from app.discord.access_request_service import (
     AccessRequestService,
     AccessWorkflowService,
@@ -35,6 +36,7 @@ from app.discord.message_service import MessageService
 from app.discord.monitor_service import MonitorService
 from app.discord.normalize import parse_timestamp
 from app.discord.notification_service import NotificationService
+from app.discord.oauth_service import DiscordOAuthService
 from app.discord.permission_service import PermissionService
 from app.discord.rest_client import DiscordRestClient
 from app.discord.search_service import SearchService
@@ -56,6 +58,7 @@ class ServiceGraph:
     monitors: MonitorService
     access_requests: AccessRequestService
     workflow: AccessWorkflowService
+    oauth: DiscordOAuthService
 
 
 class DiscordClientManager:
@@ -105,6 +108,9 @@ class DiscordClientManager:
             monitor_service=monitors,
             notification_service=notifications,
         )
+        oauth = DiscordOAuthService(
+            self._settings, self.rest_client, UserRepository(session)
+        )
         return ServiceGraph(
             session=session,
             notifications=notifications,
@@ -116,6 +122,7 @@ class DiscordClientManager:
             monitors=monitors,
             access_requests=access_requests,
             workflow=workflow,
+            oauth=oauth,
         )
 
     # ------------------------------------------------------------------ lifecycle --

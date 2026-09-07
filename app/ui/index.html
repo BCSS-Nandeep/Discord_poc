@@ -152,6 +152,7 @@
     <h1>Discord Collection Service</h1>
     <span class="sub">local console &mdash; every action calls the same REST API</span>
     <div class="pills" id="statusPills"><span class="pill p-mut">checking&hellip;</span></div>
+    <span id="authArea"></span>
     <button class="btn ghost sm" onclick="setApiKey()" id="keyBtn" title="Set the X-API-Key sent with every request">API key</button>
   </div>
 </header>
@@ -517,7 +518,12 @@ function friendlyError(data, status) {
     return "No bot token configured. Set DISCORD_BOT_TOKEN in .env and restart.";
   }
   if (data.code === "UNAUTHORIZED") {
-    return "This server requires an API key. Click “API key” in the header and paste it.";
+    return (data.details || {}).login_url
+      ? "Not signed in. Use “Log in with Discord”, or set an API key."
+      : "This server requires an API key. Click “API key” in the header and paste it.";
+  }
+  if (data.code === "OAUTH_NOT_CONFIGURED") {
+    return "Discord login is not configured on this server. Use an API key instead.";
   }
   if (data.code === "NOT_FOUND") {
     return data.message || "Not found.";
@@ -953,7 +959,41 @@ const markRead = guard(async (id) => {
   loadEvents();
 });
 
+/* ------------------------------------------------------------------ discord login */
+async function refreshAuth() {
+  let state;
+  try {
+    state = await (await fetch("/auth/me")).json();
+  } catch { return; }
+
+  const area = $("authArea");
+  if (!state.oauth_enabled) { area.innerHTML = ""; return; }
+
+  area.innerHTML = state.authenticated
+    ? `<span class="pill p-ok"><span class="dot"></span>${esc(
+        state.user.global_name || state.user.username || "signed in")}</span>
+       <button class="btn ghost sm" onclick="discordLogout()">Log out</button>`
+    : `<a class="btn sm" href="/auth/discord/login">Log in with Discord</a>`;
+}
+
+const discordLogout = guard(async () => {
+  await fetch("/auth/logout", { method: "POST" });
+  toast("Signed out");
+  refreshAuth();
+  refreshStatus();
+});
+
+// Report the outcome of a redirect back from Discord, then tidy the URL.
+(function reportLoginResult() {
+  const outcome = new URLSearchParams(location.search).get("login");
+  if (!outcome) return;
+  toast(outcome === "ok" ? "Signed in with Discord" : "Discord login was cancelled",
+        outcome === "ok" ? "ok" : "err");
+  history.replaceState({}, "", location.pathname);
+})();
+
 /* ---------------------------------------------------------------------- boot */
+refreshAuth();
 refreshStatus();
 setInterval(refreshStatus, 15000);
 // Populate the server dropdown from what is already stored, without hitting Discord.
