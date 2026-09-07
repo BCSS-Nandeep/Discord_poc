@@ -257,3 +257,52 @@ class SearchHitResponse(BaseModel):
     matched_keywords: list[str] = Field(
         description="Keywords from this query that matched the message."
     )
+
+
+class ScrapeJobResponse(BaseModel):
+    """A background historical-collection job. Poll this instead of blocking on scrape."""
+
+    id: int
+    channel_id: str
+    guild_id: str | None = None
+    status: Literal["QUEUED", "RUNNING", "COMPLETED", "PARTIAL", "FAILED"]
+    requested_limit: int | None = None
+    incremental: bool
+    messages_fetched: int
+    messages_stored: int
+    messages_duplicate: int
+    messages_matched: int
+    pages_fetched: int
+    checkpoint_message_id: str | None = Field(
+        default=None, description="Oldest message id reached so far -- the resume point."
+    )
+    stopped_reason: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 7,
+                "channel_id": "223456789012345678",
+                "guild_id": "123456789012345678",
+                "status": "RUNNING",
+                "requested_limit": 5000,
+                "incremental": False,
+                "messages_fetched": 800,
+                "messages_stored": 800,
+                "messages_duplicate": 0,
+                "messages_matched": 12,
+                "pages_fetched": 8,
+                "checkpoint_message_id": "333456789012345000",
+                "stopped_reason": None,
+                "error_message": None,
+                "created_at": "2026-09-08T12:00:00Z",
+                "started_at": "2026-09-08T12:00:01Z",
+                "finished_at": None,
+            }
+        },
+    )

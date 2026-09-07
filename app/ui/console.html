@@ -313,6 +313,7 @@ a{color:var(--petrol)}
         <button class="btn warn sm" data-a="request">Request access</button>
         <button class="btn warn sm" data-a="scrape">Scrape 100</button>
         <button class="btn warn sm" data-a="scrape-inc">Scrape (incremental)</button>
+        <button class="btn warn sm" data-a="scrapejob">Scrape as background job</button>
         <button class="btn sm" data-a="monstart">Start monitor</button>
         <button class="btn ghost sm" data-a="monstop">Stop monitor</button>
         <button class="btn ghost sm" data-a="monstatus">Monitor status</button>
@@ -768,6 +769,13 @@ $("#chanDetailCard").addEventListener("click", async e=>{
     else toast(errText(r), true);
     return;
   }
+  if(a === "scrapejob"){
+    r = await api("POST","/discord/channels/"+id+"/scrape/jobs", { limit:1000, keywords: kwBody });
+    if(!r.ok) return toast(errText(r), true);
+    toast("Job #"+r.data.id+" queued");
+    pollScrapeJob(id, r.data.id, out);
+    return;
+  }
   if(a === "monstart"){
     r = await api("POST","/discord/channels/"+id+"/monitor/start", { keywords: kwBody, collect_history: $("#actHistory").checked });
     if(r.ok){ toast(r.data.message); out.innerHTML = renderMonitorStart(r.data); } else toast(errText(r), true);
@@ -801,6 +809,19 @@ $("#chanDetailCard").addEventListener("click", async e=>{
   }
 });
 
+async function pollScrapeJob(channelId, jobId, out){
+  for(let i=0;i<40;i++){
+    await new Promise(r=>setTimeout(r, 2000));
+    const r = await api("GET","/discord/channels/"+channelId+"/scrape/jobs/"+jobId);
+    if(!r.ok) return;
+    const j = r.data;
+    out.innerHTML = '<div class="warnbox">Job #'+j.id+' — <b>'+j.status+'</b> · fetched '+
+      j.messages_fetched+' · stored '+j.messages_stored+' · duplicate '+j.messages_duplicate+
+      ' · matched '+j.messages_matched+' · pages '+j.pages_fetched+
+      (j.error_message ? ' · '+esc(j.error_message) : '')+'</div>';
+    if(["COMPLETED","PARTIAL","FAILED"].includes(j.status)) return;
+  }
+}
 function stClassChannel(s){
   return (s==="PUBLIC_ACCESSIBLE"||s==="ACCESSIBLE") ? "good" : s==="PRIVATE" ? "pend" : s==="ERROR" ? "bad" : "";
 }

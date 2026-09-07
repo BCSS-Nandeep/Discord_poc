@@ -28,7 +28,7 @@ Two classes live here:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -775,6 +775,7 @@ class AccessWorkflowService:
         after: str | None = None,
         keyword_config: KeywordConfig | None = None,
         incremental: bool = False,
+        on_page: Callable[[ScrapeResult], Awaitable[None]] | None = None,
     ) -> tuple[ScrapeResult, AccessEvaluation]:
         """Run historical collection, refusing if access is not available."""
 
@@ -807,6 +808,7 @@ class AccessWorkflowService:
             before=before,
             after=after,
             keyword_config=keyword_config,
+            on_page=on_page,
         )
         return result, evaluation
 

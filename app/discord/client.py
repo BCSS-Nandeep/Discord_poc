@@ -23,6 +23,7 @@ from app.database.repositories.guild_repository import GuildRepository
 from app.database.repositories.message_repository import MessageRepository
 from app.database.repositories.monitor_repository import MonitorRepository
 from app.database.repositories.notification_repository import NotificationRepository
+from app.database.repositories.scrape_job_repository import ScrapeJobRepository
 from app.database.repositories.user_repository import UserRepository
 from app.discord.access_request_service import (
     AccessRequestService,
@@ -31,7 +32,7 @@ from app.discord.access_request_service import (
 from app.discord.channel_service import ChannelService
 from app.discord.gateway import RECHECK_ALL_PENDING, GatewayService
 from app.discord.guild_service import GuildService
-from app.discord.keywords import KeywordMatcher
+from app.discord.keywords import KeywordConfig, KeywordMatcher
 from app.discord.message_service import MessageService
 from app.discord.monitor_service import MonitorService
 from app.discord.normalize import parse_timestamp
@@ -39,6 +40,7 @@ from app.discord.notification_service import NotificationService
 from app.discord.oauth_service import DiscordOAuthService
 from app.discord.permission_service import PermissionService
 from app.discord.rest_client import DiscordRestClient
+from app.discord.scrape_job_service import ScrapeJobService
 from app.discord.search_service import SearchService
 
 logger = get_logger(__name__)
@@ -59,6 +61,7 @@ class ServiceGraph:
     access_requests: AccessRequestService
     workflow: AccessWorkflowService
     oauth: DiscordOAuthService
+    scrape_jobs: ScrapeJobService
 
 
 class DiscordClientManager:
@@ -112,6 +115,7 @@ class DiscordClientManager:
         oauth = DiscordOAuthService(
             self._settings, self.rest_client, UserRepository(session)
         )
+        scrape_jobs = ScrapeJobService(ScrapeJobRepository(session))
         return ServiceGraph(
             session=session,
             notifications=notifications,
@@ -124,6 +128,7 @@ class DiscordClientManager:
             access_requests=access_requests,
             workflow=workflow,
             oauth=oauth,
+            scrape_jobs=scrape_jobs,
         )
 
     # ------------------------------------------------------------------ lifecycle --
@@ -241,6 +246,58 @@ class DiscordClientManager:
                     "stored": stored,
                 },
             )
+
+    async def run_scrape_job(self, job_id: int) -> None:
+        """Run a queued background scrape job to completion.
+
+        Scheduled via FastAPI's ``BackgroundTasks`` from the endpoint that creates the
+        job, so this runs *after* that request's own session has already been
+        committed and closed -- it must open its own, exactly like the Gateway
+        handlers above, never reuse a session tied to a request that has finished.
+        """
+
+        async with self._database.session() as session:
+            services = self.build_services(session)
+            job = await services.scrape_jobs.get(job_id)
+            await services.scrape_jobs.mark_running(job)
+            keyword_config = KeywordConfig.from_json(job.keyword_config_json)
+
+        async def on_page(result):  # noqa: ANN001 - local closure, type is ScrapeResult
+            async with self._database.session() as page_session:
+                page_services = self.build_services(page_session)
+                fresh_job = await page_services.scrape_jobs.get(job_id)
+                await page_services.scrape_jobs.record_progress(fresh_job, result)
+
+        try:
+            async with self._database.session() as session:
+                services = self.build_services(session)
+                job = await services.scrape_jobs.get(job_id)
+                result, _evaluation = await services.workflow.scrape_channel(
+                    job.channel_id,
+                    limit=job.requested_limit,
+                    before=job.before_cursor,
+                    after=job.after_cursor,
+                    incremental=job.incremental,
+                    keyword_config=keyword_config,
+                    on_page=on_page,
+                )
+                await services.scrape_jobs.mark_completed(job, result)
+            logger.info(
+                "Scrape job finished",
+                extra={"job_id": job_id, "stored": result.stored, "completed": result.completed},
+            )
+        except Exception as exc:  # noqa: BLE001 - a job failure must not crash the app
+            logger.exception("Scrape job failed", extra={"job_id": job_id})
+            async with self._database.session() as session:
+                services = self.build_services(session)
+                job = await services.scrape_jobs.get(job_id)
+                # Sanitized: never leak internals through a job's stored error message.
+                message = (
+                    exc.message  # type: ignore[attr-defined]
+                    if hasattr(exc, "message")
+                    else f"{type(exc).__name__} while scraping"
+                )
+                await services.scrape_jobs.mark_failed(job, error_message=str(message))
 
     async def _handle_permission_signal(self, channel_id: str) -> None:
         """Fast-path access re-check driven by a Gateway permission event."""

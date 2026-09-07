@@ -65,6 +65,16 @@ class NotificationEvent(StrEnum):
     SYSTEM_ERROR = "SYSTEM_ERROR"
 
 
+class ScrapeJobStatus(StrEnum):
+    """Lifecycle of a background historical-collection job."""
+
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+
+
 class AccessReason(StrEnum):
     """Machine-readable explanation produced by the PermissionService."""
 

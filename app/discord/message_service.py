@@ -12,7 +12,7 @@ confirming access first.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -81,11 +81,18 @@ class MessageService:
         keyword_config: KeywordConfig | None = None,
         page_size: int | None = None,
         store_raw: bool = True,
+        on_page: Callable[[ScrapeResult], Awaitable[None]] | None = None,
     ) -> ScrapeResult:
         """Page backwards through a channel's history and store what it finds.
 
         ``limit`` bounds the total number of messages fetched (not per page).  ``after``
         makes the run incremental: paging stops once the cursor reaches that message.
+
+        ``on_page``, when given, is awaited with the cumulative ``ScrapeResult`` after
+        every page -- the hook a background job uses to persist progress so a poll
+        mid-run shows real movement instead of zeros until the whole run finishes. A
+        failing hook is logged and swallowed: a progress-write problem must never abort
+        the scrape itself.
         """
 
         cid = validate_snowflake(channel_id, field="channel_id")
@@ -181,6 +188,14 @@ class MessageService:
             result.newest_message_id = result.newest_message_id or first_id
             result.oldest_message_id = last_id
             cursor = last_id
+
+            if on_page is not None:
+                try:
+                    await on_page(result)
+                except Exception:  # noqa: BLE001 - a progress-write bug must not abort the scrape
+                    logger.exception(
+                        "Scrape progress callback failed", extra={"channel_id": cid}
+                    )
 
             if page_stats["reached_stop"]:
                 result.stopped_reason = "REACHED_AFTER_CURSOR"

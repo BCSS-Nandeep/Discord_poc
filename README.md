@@ -22,6 +22,7 @@ are involved anywhere.
 9. [Adding the bot to a server](#9-adding-the-bot-to-a-server)
 10. [How private-channel access works](#10-how-private-channel-access-works)
 11. [Our access request is *not* a Discord approval](#11-our-access-request-is-not-a-discord-approval)
+11a. [Why there is no cross-server public search](#11a-why-there-is-no-cross-server-public-search)
 12. [REST API examples](#12-rest-api-examples)
 13. [Monitoring behaviour](#13-monitoring-behaviour)
 14. [SQLite schema overview](#14-sqlite-schema-overview)
@@ -125,6 +126,7 @@ discord_service/
 │   │   ├── notification_service.py
 │   │   ├── search_service.py
 │   │   ├── oauth_service.py        Discord login flow
+│   │   ├── scrape_job_service.py   background collection jobs
 │   │   ├── keywords.py             keyword config + matcher
 │   │   └── normalize.py            Discord payload → internal schema
 │   ├── database/
@@ -137,7 +139,9 @@ discord_service/
 │   │       ├── access_request_repository.py
 │   │       ├── message_repository.py
 │   │       ├── monitor_repository.py
-│   │       └── notification_repository.py
+│   │       ├── notification_repository.py
+│   │       ├── scrape_job_repository.py
+│   │       └── user_repository.py
 │   ├── schemas/                    Pydantic request/response models
 │   │   ├── common.py  guild.py  channel.py  message.py
 │   │   ├── access_request.py  monitor.py  notification.py  health.py
@@ -147,7 +151,7 @@ discord_service/
 │   │   └── console.html            the wire-log console served at /console
 │   └── workers/
 │       └── access_reconciler.py    the 12-hour reconciliation worker
-├── tests/                          365 tests, no network access required
+├── tests/                          385 tests, no network access required
 ├── INTEGRATION.md                  guide for consuming applications
 ├── .env.example
 ├── pyproject.toml
@@ -531,6 +535,47 @@ The only way access is granted is a Discord server administrator giving the bot
 
 ---
 
+## 11a. Why there is no cross-server public search
+
+A natural next ask is: *"search public channels or servers the bot hasn't joined yet,"*
+the way some Telegram tooling can search public channels globally using a real
+Telegram **user account** (via Telethon/Pyrogram against Telegram's official MTProto
+client API, which legitimately supports user-account automation).
+
+**Discord has no bot-facing equivalent, and this service will not fake one by
+automating a user account.**
+
+| | Telegram (user account, MTProto) | Discord (bot, this service) |
+|---|---|---|
+| Search public channels not joined | Yes — `searchGlobal` / `searchPosts` | **No such endpoint exists** |
+| Join a channel found this way | Yes — the account joins it | A bot must be **invited by an admin**; it cannot join itself |
+| What's being automated | The user's own real account, via Telegram's official client library | Would require a **self-bot** — scripting a human's account to look like a bot |
+
+Discord's bot API restricts a bot to servers it has been explicitly added to, and
+provides no directory or full-text search across servers it is not in. The closest
+Discord-native concept, **Discord Discovery**, is a curated listing of large public
+communities browsable only through the Discord client UI — there is no API a bot can
+call to search it.
+
+Automating a real Discord user account to get Telegram-style reach (self-hosted login,
+joining servers programmatically, searching content in servers never joined) is
+explicitly a **self-bot**: prohibited by Discord's Terms of Service, and something this
+project's own requirements have repeatedly ruled out (no self-bots, no user tokens, no
+automating a human account). It is not implemented here, and won't be added on request
+without that constraint changing.
+
+**What *is* available, and already works:**
+
+- Once a server admin adds the bot to a server, `POST /discord/channels/{id}/scrape`
+  (or the background job variant below) collects every public channel's history the
+  bot can see, then `POST /discord/search` searches all of it locally.
+- `GET /discord/guilds/search` / `GET /discord/channels/search` search **servers the
+  bot is already in** — not a public directory.
+- If you need visibility into a specific server you don't control, the accurate,
+  ToS-compliant path is the same one a human would take: ask that server's admin to
+  add the bot (`GET /discord/bot` gives the invite link), same as Discord's own
+  Server Discovery only surfaces communities that opted in.
+
 ## 12. REST API examples
 
 All examples assume `BASE=http://localhost:8100`.
@@ -726,7 +771,10 @@ curl -X POST "$BASE/discord/notifications/42/read"
 | POST | `/discord/access-requests/{request_id}/recheck` | Immediate re-check. |
 | POST | `/discord/access-requests/{request_id}/cancel` | Cancel a request. |
 | GET | `/discord/channels/{channel_id}/messages` | List stored messages. |
-| POST | `/discord/channels/{channel_id}/scrape` | Collect history. |
+| POST | `/discord/channels/{channel_id}/scrape` | Collect history (blocks until done). |
+| POST | `/discord/channels/{channel_id}/scrape/jobs` | Queue a background collection; returns immediately. |
+| GET | `/discord/channels/{channel_id}/scrape/jobs/{job_id}` | Poll a background job's progress. |
+| GET | `/discord/channels/{channel_id}/scrape/jobs` | List background jobs for a channel. |
 | POST | `/discord/search` | Search stored messages. |
 | POST | `/discord/channels/{channel_id}/monitor/start` | Start monitoring. |
 | POST | `/discord/channels/{channel_id}/monitor/stop` | Stop monitoring. |
@@ -806,6 +854,25 @@ edit; `--workers N` forks N processes. An advisory OS lock file
 (`WORKER_LOCK_FILE`) ensures only one process runs the Gateway and the reconciler —
 the others serve HTTP only and log *"serving HTTP only"*. The lock is released
 automatically when the process exits, even if it is killed.
+
+### Background scrape jobs
+
+For a channel with a lot of history, `POST /scrape` can block for a long time. Queue it
+as a background job instead:
+
+```bash
+curl -X POST $BASE/discord/channels/223456789012345678/scrape/jobs   -H 'Content-Type: application/json' -d '{"limit": 5000}'
+# -> 202 {"id": 7, "status": "QUEUED", ...}
+
+curl $BASE/discord/channels/223456789012345678/scrape/jobs/7
+# -> {"status": "RUNNING", "messages_stored": 1400, "pages_fetched": 14, ...}
+```
+
+Access is checked **before** the job is queued, so a channel the bot cannot read fails
+fast with 409 rather than queuing a job doomed to fail. Progress (`messages_fetched`,
+`messages_stored`, `pages_fetched`, `checkpoint_message_id`) updates after every page,
+so a poll mid-run shows real movement. Terminal states: `COMPLETED`, `PARTIAL` (stopped
+early — check `stopped_reason`), `FAILED` (check `error_message`).
 
 ### Historical scraping
 

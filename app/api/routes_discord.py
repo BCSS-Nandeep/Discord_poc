@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, Path, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Path, Query, status
 
 from app.api.deps import (
     ClientsDep,
@@ -21,7 +21,7 @@ from app.api.deps import (
     get_worker,
 )
 from app.core.enums import AccessRequestStatus, MonitorStatus, NotificationEvent
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import AccessNotGrantedError, NotFoundError
 from app.core.logging import get_logger
 from app.core.security import api_key_scheme, require_api_key
 from app.discord.access_request_service import AccessRequestOutcome
@@ -44,6 +44,7 @@ from app.schemas.health import BotResponse, DiscordHealthResponse
 from app.schemas.message import (
     KeywordFilter,
     MessageResponse,
+    ScrapeJobResponse,
     ScrapeRequest,
     SearchHitResponse,
     SearchRequest,
@@ -582,6 +583,103 @@ async def scrape_channel(
     summary = _scrape_summary(result)
     assert summary is not None
     return summary
+
+
+@router.post(
+    "/channels/{channel_id}/scrape/jobs",
+    response_model=ScrapeJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses=COMMON_ERRORS,
+    summary="Queue a background historical collection",
+    description=(
+        "Returns immediately with status `QUEUED` instead of blocking until the whole "
+        "channel has been paged through -- poll `GET .../scrape/jobs/{job_id}` for "
+        "progress. Access is checked before the job is queued, so a channel the bot "
+        "cannot read still fails fast with **409** rather than queuing a job doomed to "
+        "fail. Use the plain `POST .../scrape` instead for a small, quick collection "
+        "where blocking for the response is acceptable."
+    ),
+)
+async def queue_scrape_job(
+    channel_id: ChannelIdPath,
+    services: ServicesDep,
+    clients: ClientsDep,
+    background_tasks: BackgroundTasks,
+    _settings: DiscordConfiguredDep,
+    payload: Annotated[ScrapeRequest, Body()] = ScrapeRequest(),
+) -> ScrapeJobResponse:
+    """Create a scrape job and schedule it to run after this response is sent."""
+
+    # Fail fast on the same access check the synchronous endpoint uses, so a
+    # channel the bot cannot read never gets a job queued for it in the first place.
+    _channel, evaluation = await services.channels.refresh_access(channel_id)
+    if not evaluation.collection_allowed:
+        raise AccessNotGrantedError(
+            "The bot cannot collect from this channel yet",
+            details={
+                "channel_id": channel_id,
+                "access_status": evaluation.access_status.value,
+                "reason": evaluation.reason.value,
+                "hint": (
+                    "Create an access request and ask a Discord server "
+                    "administrator to grant the bot access."
+                ),
+            },
+        )
+
+    job = await services.scrape_jobs.create(
+        channel_id=channel_id,
+        guild_id=evaluation.guild_id,
+        limit=payload.limit,
+        before=payload.before,
+        after=payload.after,
+        incremental=payload.incremental,
+        keyword_config=_keyword_config(payload.keywords),
+    )
+    await services.session.commit()
+    background_tasks.add_task(clients.run_scrape_job, job.id)
+    return ScrapeJobResponse.model_validate(job)
+
+
+@router.get(
+    "/channels/{channel_id}/scrape/jobs/{job_id}",
+    response_model=ScrapeJobResponse,
+    responses=COMMON_ERRORS,
+    summary="Get a scrape job's progress",
+)
+async def get_scrape_job(
+    channel_id: ChannelIdPath,
+    job_id: Annotated[int, Path(ge=1, description="Scrape job id.")],
+    services: ServicesDep,
+) -> ScrapeJobResponse:
+    """Poll one scrape job."""
+
+    job = await services.scrape_jobs.get(job_id)
+    if job.channel_id != channel_id:
+        raise NotFoundError(
+            "Scrape job not found for this channel",
+            details={"channel_id": channel_id, "job_id": job_id},
+        )
+    return ScrapeJobResponse.model_validate(job)
+
+
+@router.get(
+    "/channels/{channel_id}/scrape/jobs",
+    response_model=Page[ScrapeJobResponse],
+    summary="List scrape jobs for a channel",
+)
+async def list_scrape_jobs(
+    channel_id: ChannelIdPath, services: ServicesDep, pagination: PaginationDep
+) -> Page[ScrapeJobResponse]:
+    """List background scrape jobs for a channel, newest first."""
+
+    rows, total = await services.scrape_jobs.list_for_channel(
+        channel_id, limit=pagination.limit, offset=pagination.offset
+    )
+    return Page[ScrapeJobResponse](
+        items=[ScrapeJobResponse.model_validate(row) for row in rows],
+        pagination=_pagination(total, pagination.limit, pagination.offset, len(rows)),
+    )
 
 
 # ================================================================= access requests ==

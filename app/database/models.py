@@ -26,6 +26,7 @@ from app.core.enums import (
     AccessRequestStatus,
     ChannelAccessStatus,
     MonitorStatus,
+    ScrapeJobStatus,
 )
 
 
@@ -277,6 +278,47 @@ class DiscordMonitor(TimestampMixin, Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"<DiscordMonitor channel_id={self.channel_id} status={self.status}>"
+
+
+class DiscordScrapeJob(TimestampMixin, Base):
+    """A background historical-collection run.
+
+    Mirrors the fire-and-poll pattern used elsewhere for long operations: creating one
+    returns immediately with ``QUEUED``, and the caller polls this row for progress
+    instead of holding an HTTP connection open for the whole scrape.
+    """
+
+    __tablename__ = "discord_scrape_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    channel_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=ScrapeJobStatus.QUEUED.value, index=True
+    )
+    requested_limit: Mapped[int | None] = mapped_column(Integer)
+    before_cursor: Mapped[str | None] = mapped_column(String(32))
+    after_cursor: Mapped[str | None] = mapped_column(String(32))
+    incremental: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    keyword_config_json: Mapped[str | None] = mapped_column(Text)
+
+    # Progress, updated after each page while RUNNING so a poll mid-run shows movement.
+    messages_fetched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    messages_stored: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    messages_duplicate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    messages_matched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pages_fetched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checkpoint_message_id: Mapped[str | None] = mapped_column(String(32))
+
+    stopped_reason: Mapped[str | None] = mapped_column(String(32))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+    __table_args__ = (Index("ix_scrape_jobs_channel_status", "channel_id", "status"),)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"<DiscordScrapeJob id={self.id} channel_id={self.channel_id} status={self.status}>"
 
 
 class DiscordUser(TimestampMixin, Base):
