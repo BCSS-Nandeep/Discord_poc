@@ -24,6 +24,7 @@ from app.core.exceptions import NotFoundError
 router = APIRouter(tags=["console"])
 
 UI_FILE = Path(__file__).resolve().parent.parent / "ui" / "index.html"
+EXPLORER_FILE = Path(__file__).resolve().parent.parent / "ui" / "explorer.html"
 
 
 @router.get(
@@ -49,6 +50,29 @@ async def console() -> HTMLResponse:
     # Read per request rather than at import: the file is small, and this means an
     # edit shows up on refresh without restarting the service.
     return HTMLResponse(UI_FILE.read_text(encoding="utf-8"))
+
+
+@router.get(
+    "/explorer",
+    response_class=HTMLResponse,
+    summary="API explorer",
+    description=(
+        "A generic tester for every endpoint, generated from the live OpenAPI schema "
+        "so it can never miss one or go stale: pick an endpoint, fill in its "
+        "parameters and body, send it, and see the raw response plus an equivalent "
+        "curl command. For the guided task-oriented workflow, use /ui instead."
+    ),
+    include_in_schema=False,
+)
+async def explorer() -> HTMLResponse:
+    """Return the API explorer page."""
+
+    if not EXPLORER_FILE.is_file():  # pragma: no cover - only if the file is deleted
+        raise NotFoundError(
+            "Explorer asset is missing from this installation",
+            details={"expected": str(EXPLORER_FILE)},
+        )
+    return HTMLResponse(EXPLORER_FILE.read_text(encoding="utf-8"))
 
 
 @router.get("/", include_in_schema=False)

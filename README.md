@@ -103,7 +103,7 @@ discord_service/
 │   │   ├── routes_discord.py       all /discord/* endpoints
 │   │   ├── routes_auth.py          Discord OAuth2 login
 │   │   ├── routes_health.py        GET /health
-│   │   └── routes_ui.py            serves the browser console
+│   │   └── routes_ui.py            serves the browser console + API explorer
 │   ├── core/
 │   │   ├── config.py               pydantic-settings configuration
 │   │   ├── security.py             X-API-Key / session authentication
@@ -142,10 +142,11 @@ discord_service/
 │   │   ├── common.py  guild.py  channel.py  message.py
 │   │   ├── access_request.py  monitor.py  notification.py  health.py
 │   ├── ui/
-│   │   └── index.html              the browser console served at /ui
+│   │   ├── index.html              the browser console served at /ui
+│   │   └── explorer.html           the API explorer served at /explorer
 │   └── workers/
 │       └── access_reconciler.py    the 12-hour reconciliation worker
-├── tests/                          343 tests, no network access required
+├── tests/                          353 tests, no network access required
 ├── INTEGRATION.md                  guide for consuming applications
 ├── .env.example
 ├── pyproject.toml
@@ -349,6 +350,7 @@ python run.py --reload
 Then open:
 
 - **Console — <http://localhost:8100/ui>** (start here; `/` redirects to it)
+- **API Explorer — <http://localhost:8100/explorer>** (test any endpoint directly)
 - Swagger UI — <http://localhost:8100/docs>
 - ReDoc — <http://localhost:8100/redoc>
 - Health — <http://localhost:8100/health>
@@ -705,6 +707,7 @@ curl -X POST "$BASE/discord/notifications/42/read"
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/ui` | Browser console (not in the OpenAPI schema). |
+| GET | `/explorer` | API explorer -- test any endpoint (not in the OpenAPI schema). |
 | GET | `/health` | Service health. |
 | GET | `/discord/health` | Discord subsystem health. |
 | GET | `/discord/bot` | Authenticated bot identity. |

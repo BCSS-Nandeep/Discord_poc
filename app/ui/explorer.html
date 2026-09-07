@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Explorer</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --border: #e2e5ea; --text: #1c2024;
+    --muted: #646b76; --accent: #5865f2; --accent-soft: #eef0fe;
+    --ok: #1a7f52; --ok-soft: #e6f4ec; --warn: #9a6700; --warn-soft: #fff4d6;
+    --err: #b42318; --err-soft: #fdecea; --code-bg: #f2f3f5;
+    --post: #036cb0; --post-soft: #e6f2fb; --get: #1a7f52; --get-soft: #e6f4ec;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d; --panel: #1e2126; --border: #2e323a; --text: #e6e8ec;
+      --muted: #99a1ad; --accent: #7d88ff; --accent-soft: #262a45;
+      --ok: #5bd39a; --ok-soft: #16301f; --warn: #e8c26a; --warn-soft: #322912;
+      --err: #ff8b7e; --err-soft: #3a1c19; --code-bg: #15171b;
+      --post: #6cb6e8; --post-soft: #12293a; --get: #5bd39a; --get-soft: #16301f;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  header {
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 12px 20px; position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 650; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  header a.navlink {
+    font-size: 12.5px; color: var(--accent); text-decoration: none; font-weight: 600;
+  }
+  header a.navlink:hover { text-decoration: underline; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+    border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .p-ok   { background: var(--ok-soft);   color: var(--ok); }
+  .p-warn { background: var(--warn-soft); color: var(--warn); }
+  .p-err  { background: var(--err-soft);  color: var(--err); }
+  .p-mut  { background: var(--code-bg);   color: var(--muted); }
+
+  button.btn {
+    background: var(--accent); color: #fff; border: none; border-radius: 7px;
+    padding: 7px 13px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  button.btn:hover { filter: brightness(1.08); }
+  button.btn:disabled { opacity: .5; cursor: not-allowed; }
+  button.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+  button.btn.sm { padding: 4px 10px; font-size: 12px; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 18px 20px 60px; }
+
+  #toolbar {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  #toolbar input[type="search"] {
+    flex: 1; min-width: 220px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; font-size: 13.5px;
+  }
+  #summary { color: var(--muted); font-size: 12.5px; }
+
+  .tag-group { margin-bottom: 22px; }
+  .tag-group > summary {
+    list-style: none; cursor: pointer; font-size: 13px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+    padding: 6px 2px; display: flex; align-items: center; gap: 8px;
+  }
+  .tag-group > summary::-webkit-details-marker { display: none; }
+  .tag-group > summary::before { content: "▸"; font-size: 11px; }
+  .tag-group[open] > summary::before { content: "▾"; }
+  .tag-group .tag-count { font-weight: 500; text-transform: none; letter-spacing: 0; }
+
+  .endpoint {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 9px;
+    margin: 8px 0; overflow: hidden;
+  }
+  .endpoint > summary {
+    list-style: none; cursor: pointer; padding: 10px 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .endpoint > summary::-webkit-details-marker { display: none; }
+  .method {
+    font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 5px;
+    min-width: 42px; text-align: center;
+  }
+  .m-get  { background: var(--get-soft);  color: var(--get); }
+  .m-post { background: var(--post-soft); color: var(--post); }
+  .m-delete { background: var(--err-soft); color: var(--err); }
+  .m-patch, .m-put { background: var(--warn-soft); color: var(--warn); }
+  .ep-path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .ep-summary { color: var(--muted); font-size: 12.5px; margin-left: auto; text-align: right; }
+  .auth-badge { font-size: 10.5px; color: var(--muted); }
+
+  .endpoint-body { padding: 4px 14px 14px; border-top: 1px solid var(--border); }
+  .ep-desc { color: var(--muted); font-size: 12.5px; margin: 10px 0; white-space: pre-wrap; }
+
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 10px 0; }
+  .field label {
+    display: block; font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 3px;
+  }
+  .field label .req { color: var(--err); }
+  .field input, .field select {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 9px; font-size: 13px;
+  }
+  .field .hint { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+
+  .body-editor { margin: 10px 0; }
+  .body-editor textarea {
+    width: 100%; min-height: 120px; background: var(--code-bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px; padding: 10px; font-size: 12.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical;
+  }
+
+  .actions { display: flex; gap: 8px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+  .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--border);
+          border-top-color: #fff; border-radius: 50%; animation: s .7s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+
+  .response { margin-top: 10px; }
+  .response-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+  .response pre {
+    background: var(--code-bg); border-radius: 7px; padding: 11px; font-size: 12px;
+    max-height: 380px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0;
+  }
+  .curl-box { margin-top: 8px; }
+  .curl-box pre {
+    background: var(--code-bg); border-radius: 7px; padding: 9px 11px; font-size: 11.5px;
+    overflow-x: auto; white-space: pre; margin: 4px 0 0;
+  }
+
+  .empty-state { color: var(--muted); text-align: center; padding: 40px; font-size: 13px; }
+  .toast {
+    position: fixed; right: 18px; bottom: 18px; z-index: 50;
+    display: flex; flex-direction: column; gap: 8px; max-width: 360px;
+  }
+  .toast div {
+    padding: 10px 13px; border-radius: 8px; font-size: 12.5px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.18); line-height: 1.45;
+  }
+  .toast .t-ok  { background: var(--ok-soft);  color: var(--ok); }
+  .toast .t-err { background: var(--err-soft); color: var(--err); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>API Explorer</h1>
+  <span class="sub">reads the live OpenAPI schema &mdash; every endpoint, always current</span>
+  <span class="spacer"></span>
+  <span id="authPill" class="pill p-mut"><span class="dot"></span>checking&hellip;</span>
+  <button class="btn ghost sm" onclick="setApiKey()">API key</button>
+  <a class="navlink" href="/ui">&larr; Console</a>
+  <a class="navlink" href="/docs">Swagger</a>
+</header>
+
+<main>
+  <div id="toolbar">
+    <input type="search" id="filterBox" placeholder="Filter by path, method or summary&hellip;" oninput="renderList()">
+    <span id="summary"></span>
+    <button class="btn ghost sm" onclick="expandAll(true)">Expand all</button>
+    <button class="btn ghost sm" onclick="expandAll(false)">Collapse all</button>
+  </div>
+  <div id="groups"><div class="empty-state">Loading endpoints&hellip;</div></div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function toast(message, kind) {
+  const el = document.createElement("div");
+  el.className = kind === "err" ? "t-err" : "t-ok";
+  el.textContent = message;
+  $("toast").appendChild(el);
+  setTimeout(() => el.remove(), 4500);
+}
+
+/* --------------------------------------------------------- shared auth (with /ui) */
+const KEY_STORAGE = "discord-service-api-key";
+const apiKey = () => { try { return localStorage.getItem(KEY_STORAGE) || ""; } catch { return ""; } };
+
+function setApiKey() {
+  const next = window.prompt(
+    "API key sent as the X-API-Key header on every request below. Leave blank to clear.",
+    apiKey()
+  );
+  if (next === null) return;
+  try {
+    if (next.trim()) localStorage.setItem(KEY_STORAGE, next.trim());
+    else localStorage.removeItem(KEY_STORAGE);
+  } catch { toast("This browser blocked local storage.", "err"); return; }
+  toast(next.trim() ? "API key saved" : "API key cleared");
+  refreshAuthPill();
+}
+
+async function refreshAuthPill() {
+  try {
+    const [health, me] = await Promise.all([
+      fetch("/health").then((r) => r.json()).catch(() => null),
+      fetch("/auth/me").then((r) => r.json()).catch(() => null),
+    ]);
+    const bits = [];
+    if (health) bits.push(health.status === "ok" ? "API up" : `API ${health.status}`);
+    if (me && me.authenticated) bits.push(`signed in as ${me.user.global_name || me.user.username}`);
+    else if (apiKey()) bits.push("API key set");
+    else if (me && me.api_key_required) bits.push("no credentials set");
+    $("authPill").className = "pill " + (health && health.status === "ok" ? "p-ok" : "p-warn");
+    $("authPill").innerHTML = `<span class="dot"></span>${esc(bits.join(" · ") || "unknown")}`;
+  } catch {
+    $("authPill").className = "pill p-err";
+    $("authPill").innerHTML = `<span class="dot"></span>API unreachable`;
+  }
+}
+
+/* ------------------------------------------------------------- schema resolution */
+let openapi = null;
+
+function resolveSchema(schema) {
+  if (!schema) return {};
+  if (schema.$ref) {
+    const name = schema.$ref.split("/").pop();
+    return resolveSchema(openapi.components.schemas[name] || {});
+  }
+  if (schema.anyOf) {
+    const real = schema.anyOf.find((s) => s.type !== "null") || schema.anyOf[0];
+    return { ...resolveSchema(real), description: schema.description || real.description };
+  }
+  return schema;
+}
+
+function skeletonFor(schema, depth) {
+  const resolved = resolveSchema(schema);
+  if (resolved.example !== undefined) return resolved.example;
+  if (depth <= 0) return typeDefault(resolved);
+  if (resolved.type === "object" && resolved.properties) {
+    const out = {};
+    for (const [key, propSchema] of Object.entries(resolved.properties)) {
+      out[key] = skeletonFor(propSchema, depth - 1);
+    }
+    return out;
+  }
+  if (resolved.type === "array") {
+    return [];
+  }
+  return typeDefault(resolved);
+}
+
+function typeDefault(resolved) {
+  if (resolved.default !== undefined) return resolved.default;
+  if (resolved.enum) return resolved.enum[0];
+  switch (resolved.type) {
+    case "integer": case "number": return 0;
+    case "boolean": return false;
+    case "array": return [];
+    case "object": return {};
+    default: return "";
+  }
+}
+
+function paramDefaultValue(schema) {
+  const resolved = resolveSchema(schema);
+  if (Array.isArray(resolved.examples) && resolved.examples.length) return resolved.examples[0];
+  if (resolved.default !== undefined) return resolved.default;
+  return "";
+}
+
+/* -------------------------------------------------------------- endpoint listing */
+const PARAM_STORAGE_PREFIX = "discord-service-explorer:";
+
+function loadSavedInputs(key) {
+  try {
+    return JSON.parse(localStorage.getItem(PARAM_STORAGE_PREFIX + key) || "null");
+  } catch { return null; }
+}
+function saveInputs(key, value) {
+  try { localStorage.setItem(PARAM_STORAGE_PREFIX + key, JSON.stringify(value)); } catch { /* ignore */ }
+}
+
+function collectEndpoints() {
+  const groups = new Map(); // tag -> [{method, path, op}]
+  for (const [path, methods] of Object.entries(openapi.paths)) {
+    for (const [method, op] of Object.entries(methods)) {
+      if (!["get", "post", "put", "patch", "delete"].includes(method)) continue;
+      const tag = (op.tags && op.tags[0]) || "other";
+      if (!groups.has(tag)) groups.set(tag, []);
+      groups.get(tag).push({ method, path, op });
+    }
+  }
+  const tagOrder = (openapi.tags || []).map((t) => t.name);
+  const orderedTags = [...groups.keys()].sort(
+    (a, b) => (tagOrder.indexOf(a) + 1 || 99) - (tagOrder.indexOf(b) + 1 || 99)
+  );
+  return orderedTags.map((tag) => ({
+    tag,
+    description: (openapi.tags || []).find((t) => t.name === tag)?.description || "",
+    endpoints: groups.get(tag),
+  }));
+}
+
+function endpointKey(method, path) { return `${method.toUpperCase()} ${path}`; }
+
+function renderList() {
+  const filter = $("filterBox").value.trim().toLowerCase();
+  const groups = collectEndpoints();
+  let total = 0, shown = 0;
+
+  const html = groups.map((group) => {
+    const rows = group.endpoints.filter((e) => {
+      total++;
+      const haystack = `${e.method} ${e.path} ${e.op.summary || ""}`.toLowerCase();
+      const match = !filter || haystack.includes(filter);
+      if (match) shown++;
+      return match;
+    });
+    if (!rows.length) return "";
+    return `
+      <details class="tag-group" open>
+        <summary>${esc(group.tag)} <span class="tag-count">(${rows.length})</span></summary>
+        ${rows.map(renderEndpoint).join("")}
+      </details>`;
+  }).join("");
+
+  $("groups").innerHTML = html || `<div class="empty-state">No endpoints match "${esc(filter)}".</div>`;
+  $("summary").textContent = filter ? `${shown} / ${total} endpoints` : `${total} endpoints`;
+
+  // Re-bind now that the DOM was rebuilt.
+  for (const group of groups) {
+    for (const e of group.endpoints) {
+      const el = document.getElementById(rowId(e.method, e.path));
+      if (el) wireEndpoint(el, e);
+    }
+  }
+}
+
+function rowId(method, path) {
+  return "ep-" + btoa(unescape(encodeURIComponent(method + path))).replace(/[^A-Za-z0-9]/g, "");
+}
+
+function renderEndpoint(e) {
+  const id = rowId(e.method, e.path);
+  const auth = pathNeedsAuth(e.path) ? "requires auth" : "open";
+  return `
+    <details class="endpoint" id="${id}">
+      <summary>
+        <span class="method m-${e.method}">${e.method.toUpperCase()}</span>
+        <span class="ep-path">${esc(e.path)}</span>
+        <span class="ep-summary">${esc(e.op.summary || "")} &middot; <span class="auth-badge">${auth}</span></span>
+      </summary>
+      <div class="endpoint-body"></div>
+    </details>`;
+}
+
+function pathNeedsAuth(path) {
+  return path.startsWith("/discord/");
+}
+
+/* ------------------------------------------------------- per-endpoint interaction */
+function wireEndpoint(details, e) {
+  if (details.dataset.wired) return; // avoid double-binding across re-renders
+  details.dataset.wired = "1";
+
+  details.addEventListener("toggle", function onFirstOpen() {
+    if (!details.open || details.dataset.built) return;
+    details.dataset.built = "1";
+    buildEndpointBody(details.querySelector(".endpoint-body"), e);
+  });
+}
+
+function buildEndpointBody(container, e) {
+  const key = endpointKey(e.method, e.path);
+  const saved = loadSavedInputs(key) || {};
+  const pathParams = (e.op.parameters || []).filter((p) => p.in === "path");
+  const queryParams = (e.op.parameters || []).filter((p) => p.in === "query");
+  const hasBody = !!e.op.requestBody;
+  const bodySchema = hasBody
+    ? e.op.requestBody.content["application/json"].schema
+    : null;
+  const bodyExample = hasBody ? skeletonFor(bodySchema, 4) : null;
+
+  const fieldHtml = (p, kind) => {
+    const resolved = resolveSchema(p.schema);
+    const value = saved[p.name] ?? paramDefaultValue(p.schema);
+    const inputId = `${kind}-${p.name}-${container.id || Math.random()}`;
+    const control = resolved.enum
+      ? `<select id="${inputId}" data-name="${esc(p.name)}" data-kind="${kind}">
+           <option value="">${p.required ? "-- required --" : "(any)"}</option>
+           ${resolved.enum.map((v) => `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(v)}</option>`).join("")}
+         </select>`
+      : `<input id="${inputId}" data-name="${esc(p.name)}" data-kind="${kind}"
+                type="${resolved.type === 'integer' || resolved.type === 'number' ? 'number' : 'text'}"
+                value="${esc(value)}" placeholder="${esc(resolved.pattern || resolved.type || '')}">`;
+    return `<div class="field">
+      <label>${esc(p.name)}${p.required ? ' <span class="req">*</span>' : ""}</label>
+      ${control}
+      ${p.description ? `<div class="hint">${esc(p.description)}</div>` : ""}
+    </div>`;
+  };
+
+  container.innerHTML = `
+    ${e.op.description ? `<div class="ep-desc">${esc(stripMarkdown(e.op.description))}</div>` : ""}
+    ${pathParams.length || queryParams.length
+      ? `<div class="field-grid">${pathParams.map((p) => fieldHtml(p, "path")).join("")}${queryParams.map((p) => fieldHtml(p, "query")).join("")}</div>`
+      : ""}
+    ${hasBody ? `
+      <div class="body-editor">
+        <label style="font-size:11px;color:var(--muted);font-weight:600;">Request body (JSON)</label>
+        <textarea class="body-input">${esc(JSON.stringify(saved.__body ?? bodyExample, null, 2))}</textarea>
+      </div>` : ""}
+    <div class="actions">
+      <button class="btn send-btn">Send</button>
+      <button class="btn ghost sm reset-btn">Reset to example</button>
+      <span class="send-status"></span>
+    </div>
+    <div class="response" hidden>
+      <div class="response-meta"></div>
+      <pre class="response-body"></pre>
+      <div class="curl-box"><div class="hint" style="font-size:10.5px;color:var(--muted)">Equivalent curl:</div><pre class="curl-cmd"></pre></div>
+    </div>`;
+
+  container.querySelector(".send-btn").addEventListener("click", () => sendRequest(container, e));
+  container.querySelector(".reset-btn").addEventListener("click", () => {
+    const ta = container.querySelector(".body-input");
+    if (ta) ta.value = JSON.stringify(bodyExample, null, 2);
+    for (const p of [...pathParams, ...queryParams]) {
+      const field = container.querySelector(`[data-name="${CSS.escape(p.name)}"]`);
+      if (field) field.value = paramDefaultValue(p.schema);
+    }
+  });
+}
+
+function stripMarkdown(text) {
+  return text.replace(/\*\*(.*?)\*\*/g, "$1").replace(/`([^`]*)`/g, "$1");
+}
+
+async function sendRequest(container, e) {
+  const statusEl = container.querySelector(".send-status");
+  const sendBtn = container.querySelector(".send-btn");
+  const responseBox = container.querySelector(".response");
+  const metaEl = container.querySelector(".response-meta");
+  const bodyEl = container.querySelector(".response-body");
+  const curlEl = container.querySelector(".curl-cmd");
+
+  const values = {};
+  let path = e.path;
+  const query = new URLSearchParams();
+  let missingRequired = null;
+
+  for (const el of container.querySelectorAll("[data-name]")) {
+    const name = el.dataset.name;
+    const kind = el.dataset.kind;
+    const value = el.value;
+    values[name] = value;
+    if (kind === "path") {
+      if (!value) missingRequired = name;
+      path = path.replace(`{${name}}`, encodeURIComponent(value));
+    } else if (kind === "query" && value !== "") {
+      query.set(name, value);
+    }
+  }
+
+  if (missingRequired) {
+    statusEl.textContent = `"${missingRequired}" is required.`;
+    statusEl.style.color = "var(--err)";
+    return;
+  }
+
+  let bodyText = null;
+  if (e.op.requestBody) {
+    const ta = container.querySelector(".body-input");
+    bodyText = ta.value.trim();
+    if (bodyText) {
+      try { JSON.parse(bodyText); }
+      catch (err) {
+        statusEl.textContent = "Request body is not valid JSON: " + err.message;
+        statusEl.style.color = "var(--err)";
+        return;
+      }
+    }
+    values.__body = bodyText ? JSON.parse(bodyText) : null;
+  }
+  saveInputs(endpointKey(e.method, e.path), values);
+
+  const qs = query.toString();
+  const url = path + (qs ? "?" + qs : "");
+  const headers = {};
+  if (bodyText) headers["Content-Type"] = "application/json";
+  const key = apiKey();
+  if (key) headers["X-API-Key"] = key;
+
+  curlEl.textContent = buildCurl(e.method, url, headers, bodyText);
+
+  statusEl.innerHTML = '<span class="spin" style="border-top-color:var(--accent)"></span> sending&hellip;';
+  statusEl.style.color = "var(--muted)";
+  sendBtn.disabled = true;
+  const started = performance.now();
+
+  try {
+    const response = await fetch(url, {
+      method: e.method.toUpperCase(),
+      headers,
+      body: bodyText || undefined,
+    });
+    const elapsed = Math.round(performance.now() - started);
+    const text = await response.text();
+    let pretty = text;
+    try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch { /* not JSON */ }
+
+    responseBox.hidden = false;
+    const ok = response.status >= 200 && response.status < 300;
+    metaEl.innerHTML = `
+      <span class="pill ${ok ? "p-ok" : response.status === 401 ? "p-warn" : "p-err"}">
+        <span class="dot"></span>${response.status} ${esc(response.statusText)}
+      </span>
+      <span>${elapsed} ms</span>
+      <span>${esc(response.headers.get("content-type") || "")}</span>`;
+    bodyEl.textContent = pretty || "(empty body)";
+    statusEl.textContent = "";
+  } catch (err) {
+    responseBox.hidden = false;
+    metaEl.innerHTML = `<span class="pill p-err"><span class="dot"></span>network error</span>`;
+    bodyEl.textContent = String(err);
+    statusEl.textContent = "";
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+// Masks the API key in the displayed curl command -- it is only ever used in this
+// page's own request, never in the copyable text a screenshot might capture.
+function buildCurl(method, url, headers, bodyText) {
+  const parts = [`curl -X ${method.toUpperCase()} '${location.origin}${url}'`];
+  for (const [name, value] of Object.entries(headers)) {
+    const shown = name === "X-API-Key" ? "***" : value;
+    parts.push(`  -H '${name}: ${shown}'`);
+  }
+  if (bodyText) parts.push(`  --data '${bodyText.replace(/'/g, "'\\''")}'`);
+  return parts.join(" \\\n");
+}
+
+function expandAll(open) {
+  document.querySelectorAll("details").forEach((d) => {
+    d.open = open;
+    if (open) d.dispatchEvent(new Event("toggle"));
+  });
+}
+
+/* ---------------------------------------------------------------------- boot ---- */
+(async function boot() {
+  try {
+    openapi = await (await fetch("/openapi.json")).json();
+  } catch (err) {
+    $("groups").innerHTML = `<div class="empty-state">Could not load /openapi.json: ${esc(String(err))}</div>`;
+    return;
+  }
+  renderList();
+  refreshAuthPill();
+  setInterval(refreshAuthPill, 20000);
+})();
+</script>
+</body>
+</html>
